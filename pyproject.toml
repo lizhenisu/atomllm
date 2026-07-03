@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 atomllm-acquire-wikipedia = "atomllm.data.acquisition:main"
+atomllm-clean-wikipedia = "atomllm.data.cleaning:main"
 
 [dependency-groups]
 dev = [
