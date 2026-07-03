@@ -56,14 +56,15 @@ def valid_document() -> dict[str, object]:
     }
 
 
-def test_loads_default_empty_source_registry() -> None:
+def test_loads_default_disabled_candidate_registry() -> None:
     registry = load_source_registry("configs/data/sources.yaml")
 
-    assert registry == SourceRegistry(
-        schema_version=1,
-        privacy_action="warn",
-        sources=(),
-    )
+    assert registry.schema_version == 1
+    assert registry.privacy_action == "warn"
+    assert len(registry.sources) == 12
+    assert all(not source.enabled for source in registry.sources)
+    assert len({source.source_id for source in registry.sources}) == 12
+    assert all(len(source.acquisition.revision) == 40 for source in registry.sources)
 
 
 def test_parses_and_serializes_valid_source() -> None:

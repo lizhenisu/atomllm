@@ -15,3 +15,5 @@ outputs/
 *.safetensors
 *.pt
 *.pth
+
+.env

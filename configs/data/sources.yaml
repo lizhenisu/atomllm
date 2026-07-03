@@ -1,3 +1,182 @@
 schema_version: 1
 privacy_action: warn
-sources: []
+sources:
+  - source_id: fineweb2-v2-1-1
+    name: FineWeb2
+    version: v2.1.1
+    license: ODC-By-1.0
+    homepage: https://huggingface.co/datasets/HuggingFaceFW/fineweb-2
+    languages: [zh, ja, und]
+    content_types: [general]
+    data_format: parquet
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: HuggingFaceFW/fineweb-2
+      revision: af9c13333eb981300149d5ca60a8e9d659b276b9
+      expected_sha256: null
+
+  - source_id: fineweb-2025-07
+    name: FineWeb
+    version: "2025-07-11"
+    license: ODC-By-1.0
+    homepage: https://huggingface.co/datasets/HuggingFaceFW/fineweb
+    languages: [en]
+    content_types: [general]
+    data_format: parquet
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: HuggingFaceFW/fineweb
+      revision: 9bb295ddab0e05d785b879661af7260fed5140fc
+      expected_sha256: null
+
+  - source_id: fineweb-edu-2025-07
+    name: FineWeb-Edu
+    version: "2025-07-11"
+    license: ODC-By-1.0
+    homepage: https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu
+    languages: [en]
+    content_types: [general, science]
+    data_format: parquet
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: HuggingFaceFW/fineweb-edu
+      revision: 87f09149ef4734204d70ed1d046ddc9ca3f2b8f9
+      expected_sha256: null
+
+  - source_id: cci3-hq-2024-11
+    name: CCI3-HQ
+    version: "2024-11-11"
+    license: unknown-user-agreement
+    homepage: https://huggingface.co/datasets/BAAI/CCI3-HQ
+    languages: [zh]
+    content_types: [general]
+    data_format: json
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: BAAI/CCI3-HQ
+      revision: d6f3aa30cebfef497e822ff968ed68a18bf90b8f
+      expected_sha256: null
+
+  - source_id: industry-corpus2-2024-12
+    name: IndustryCorpus2
+    version: "2024-12-17"
+    license: Apache-2.0
+    homepage: https://huggingface.co/datasets/BAAI/IndustryCorpus2
+    languages: [zh, en]
+    content_types: [general, code, math, science]
+    data_format: parquet
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: BAAI/IndustryCorpus2
+      revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+      expected_sha256: null
+
+  - source_id: wikipedia-20231101
+    name: Wikimedia Wikipedia
+    version: "20231101"
+    license: CC-BY-SA-3.0-and-GFDL
+    homepage: https://huggingface.co/datasets/wikimedia/wikipedia
+    languages: [zh, ja, en, und]
+    content_types: [encyclopedia]
+    data_format: parquet
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: wikimedia/wikipedia
+      revision: b04c8d1ceb2f5cd4588862100d08de323dccfbaa
+      expected_sha256: null
+
+  - source_id: japanese-pd-2026-02
+    name: PleIAs Japanese-PD
+    version: "2026-02-16"
+    license: public-domain-row-level-card-metadata-missing
+    homepage: https://huggingface.co/datasets/PleIAs/Japanese-PD
+    languages: [ja]
+    content_types: [general]
+    data_format: parquet
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: PleIAs/Japanese-PD
+      revision: 5e660ae3fe7e38e04118e8062812ba3a0d8a4ede
+      expected_sha256: null
+
+  - source_id: the-stack-v2-2024-04
+    name: The Stack v2
+    version: "2024-04-23"
+    license: source-specific-permissive-or-missing
+    homepage: https://huggingface.co/datasets/bigcode/the-stack-v2
+    languages: [und]
+    content_types: [code]
+    data_format: parquet-and-software-heritage-ids
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: bigcode/the-stack-v2
+      revision: 7408bfbcfd48e5833d62fd3dba48afd20d109473
+      expected_sha256: null
+
+  - source_id: open-web-math-2023-10
+    name: OpenWebMath
+    version: "2023-10-17"
+    license: ODC-By-1.0-plus-Common-Crawl-ToU
+    homepage: https://huggingface.co/datasets/open-web-math/open-web-math
+    languages: [en]
+    content_types: [math, science]
+    data_format: parquet
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: open-web-math/open-web-math
+      revision: fde8ef8de2300f5e778f56261843dab89f230815
+      expected_sha256: null
+
+  - source_id: pes2o-v3
+    name: peS2o v3
+    version: v3
+    license: ODC-By-1.0
+    homepage: https://huggingface.co/datasets/allenai/peS2o
+    languages: [en]
+    content_types: [science]
+    data_format: jsonl-zstd
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: allenai/peS2o
+      revision: 636a503e44a3ca1b58e01fb61eab0825cd574de0
+      expected_sha256: null
+
+  - source_id: proof-pile2-2023-10
+    name: Proof-Pile-2
+    version: "2023-10-25"
+    license: unknown-mixed-sources
+    homepage: https://huggingface.co/datasets/EleutherAI/proof-pile-2
+    languages: [en]
+    content_types: [math, code, science]
+    data_format: jsonl-zstd
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: EleutherAI/proof-pile-2
+      revision: 901a9273a770e9d4138c5ddd91802f9c5c6cdc4b
+      expected_sha256: null
+
+  - source_id: common-pile-comma-v0-1
+    name: Common Pile Comma v0.1 Training Dataset
+    version: v0.1
+    license: source-specific-public-domain-or-open
+    homepage: https://huggingface.co/datasets/common-pile/comma_v0.1_training_dataset
+    languages: [en]
+    content_types: [general, encyclopedia, code, math, science]
+    data_format: parquet
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: common-pile/comma_v0.1_training_dataset
+      revision: 5afc546db324e7f39f297ba757c9a60547151e7c
+      expected_sha256: null
