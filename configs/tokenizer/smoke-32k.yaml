@@ -13,6 +13,10 @@ algorithm:
   dropout: 0.0
   add_prefix_space: false
   trim_offsets: false
+  use_regex: true
+  byte_fallback: false
+  fuse_unk: false
+  ignore_merges: false
   max_token_length: 24
 special_tokens:
   - id: 0

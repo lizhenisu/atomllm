@@ -89,6 +89,10 @@ class AlgorithmConfig:
     dropout: float
     add_prefix_space: bool
     trim_offsets: bool
+    use_regex: bool
+    byte_fallback: bool
+    fuse_unk: bool
+    ignore_merges: bool
     max_token_length: int
 
     @classmethod
@@ -106,6 +110,10 @@ class AlgorithmConfig:
                 "dropout",
                 "add_prefix_space",
                 "trim_offsets",
+                "use_regex",
+                "byte_fallback",
+                "fuse_unk",
+                "ignore_merges",
                 "max_token_length",
             },
             "algorithm",
@@ -137,6 +145,11 @@ class AlgorithmConfig:
         for field_name in ("add_prefix_space", "trim_offsets"):
             if type(data[field_name]) is not bool or data[field_name] is not False:
                 raise TokenizerConfigError(f"algorithm.{field_name} must be false")
+        if data["use_regex"] is not True:
+            raise TokenizerConfigError("algorithm.use_regex must be true")
+        for field_name in ("byte_fallback", "fuse_unk", "ignore_merges"):
+            if type(data[field_name]) is not bool or data[field_name] is not False:
+                raise TokenizerConfigError(f"algorithm.{field_name} must be false")
         max_token_length = data["max_token_length"]
         if type(max_token_length) is not int or max_token_length <= 0:
             raise TokenizerConfigError(
@@ -152,6 +165,10 @@ class AlgorithmConfig:
             dropout=float(dropout),
             add_prefix_space=data["add_prefix_space"],
             trim_offsets=data["trim_offsets"],
+            use_regex=data["use_regex"],
+            byte_fallback=data["byte_fallback"],
+            fuse_unk=data["fuse_unk"],
+            ignore_merges=data["ignore_merges"],
             max_token_length=max_token_length,
         )
 

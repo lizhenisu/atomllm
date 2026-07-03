@@ -10,6 +10,7 @@ dependencies = [
     "opencc-python-reimplemented>=0.1.7",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
+    "tokenizers>=0.23.1",
     "torch",
 ]
 
@@ -19,6 +20,7 @@ atomllm-clean-wikipedia = "atomllm.data.cleaning:main"
 atomllm-deduplicate-wikipedia = "atomllm.data.deduplication:main"
 atomllm-split-wikipedia = "atomllm.data.splitting:main"
 atomllm-build-data-version = "atomllm.data.versioning:main"
+atomllm-train-tokenizer = "atomllm.tokenizer.training:main"
 
 [dependency-groups]
 dev = [
