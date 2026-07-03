@@ -1,0 +1,54 @@
+schema_version: 1
+plan_id: atom-pretrain-v1
+model_id: Atom-Base-300M
+
+budgets:
+  smoke: 1000000
+  pilot: 50000000
+  main: 1000000000
+  stretch: 3000000000
+
+language_mix:
+  zh-Hans: 0.50
+  en: 0.30
+  zh-Hant: 0.10
+  ja: 0.07
+  other: 0.03
+
+content_mix:
+  general: 0.40
+  encyclopedia: 0.20
+  code: 0.15
+  math: 0.10
+  science: 0.10
+  conversation: 0.05
+
+quality_mix:
+  high: 0.55
+  standard: 0.40
+  exploratory: 0.05
+
+length_mix:
+  - name: short
+    min_tokens: 1
+    max_tokens: 511
+    fraction: 0.15
+  - name: medium
+    min_tokens: 512
+    max_tokens: 2047
+    fraction: 0.45
+  - name: long
+    min_tokens: 2048
+    max_tokens: 4095
+    fraction: 0.30
+  - name: extra_long
+    min_tokens: 4096
+    max_tokens: 8192
+    fraction: 0.10
+
+constraints:
+  max_source_fraction: 0.20
+  max_exact_duplicate_fraction: 0.0
+  max_near_duplicate_fraction: 0.01
+  privacy_action: warn
+  unknown_license_action: warn
