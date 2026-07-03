@@ -16,6 +16,9 @@ dependencies = [
 [project.scripts]
 atomllm-acquire-wikipedia = "atomllm.data.acquisition:main"
 atomllm-clean-wikipedia = "atomllm.data.cleaning:main"
+atomllm-deduplicate-wikipedia = "atomllm.data.deduplication:main"
+atomllm-split-wikipedia = "atomllm.data.splitting:main"
+atomllm-build-data-version = "atomllm.data.versioning:main"
 
 [dependency-groups]
 dev = [
