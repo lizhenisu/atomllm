@@ -27,7 +27,10 @@ class ProjectConfig:
     output_dir: Path
 
     def __post_init__(self) -> None:
-        if not isinstance(self.experiment_name, str) or not self.experiment_name.strip():
+        if (
+            not isinstance(self.experiment_name, str)
+            or not self.experiment_name.strip()
+        ):
             raise ConfigError("experiment_name must be a non-empty string")
         if type(self.seed) is not int:
             raise ConfigError("seed must be an integer")

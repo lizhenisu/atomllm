@@ -42,8 +42,7 @@ def make_run(
 
 def read_json_lines(log_path: Path) -> list[dict[str, object]]:
     return [
-        json.loads(line)
-        for line in log_path.read_text(encoding="utf-8").splitlines()
+        json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()
     ]
 
 

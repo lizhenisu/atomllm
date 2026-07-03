@@ -70,9 +70,7 @@ def _build_console_handler(run_id: str, level: int) -> logging.Handler:
     return handler
 
 
-def _build_file_handler(
-    log_path: Path, run_id: str, level: int
-) -> logging.Handler:
+def _build_file_handler(log_path: Path, run_id: str, level: int) -> logging.Handler:
     handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
     handler.setLevel(level)
     handler.addFilter(_RunIdFilter(run_id))

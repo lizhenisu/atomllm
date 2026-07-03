@@ -10,7 +10,9 @@ from atomllm.config import ProjectConfig
 from atomllm.experiment import RunContext, create_run, set_seed
 
 
-def make_config(tmp_path: Path, experiment_name: str = "synthetic-smoke") -> ProjectConfig:
+def make_config(
+    tmp_path: Path, experiment_name: str = "synthetic-smoke"
+) -> ProjectConfig:
     return ProjectConfig(
         experiment_name=experiment_name,
         seed=42,
@@ -57,8 +59,7 @@ def test_create_run_builds_isolated_directory_tree(
         run_id="20260703-153000_synthetic-smoke_seed42",
         run_dir=tmp_path / "artifacts/20260703-153000_synthetic-smoke_seed42",
         checkpoints_dir=(
-            tmp_path
-            / "artifacts/20260703-153000_synthetic-smoke_seed42/checkpoints"
+            tmp_path / "artifacts/20260703-153000_synthetic-smoke_seed42/checkpoints"
         ),
         logs_dir=tmp_path / "artifacts/20260703-153000_synthetic-smoke_seed42/logs",
         reports_dir=(
