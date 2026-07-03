@@ -1,0 +1,73 @@
+schema_version: 1
+name: atom-tokenizer-smoke-v1
+status: smoke
+training_eligible: false
+model_max_length: 8192
+algorithm:
+  model_type: byte_level_bpe
+  vocab_size: 32000
+  normalization: nfc
+  pre_tokenizer: byte_level
+  decoder: byte_level
+  min_frequency: 2
+  dropout: 0.0
+  add_prefix_space: false
+  trim_offsets: false
+  max_token_length: 24
+special_tokens:
+  - id: 0
+    token: <pad>
+    purpose: padding
+  - id: 1
+    token: <unk>
+    purpose: unknown
+  - id: 2
+    token: <bos>
+    purpose: beginning_of_sequence
+  - id: 3
+    token: <eos>
+    purpose: end_of_sequence
+  - id: 4
+    token: <|system|>
+    purpose: system_role
+  - id: 5
+    token: <|user|>
+    purpose: user_role
+  - id: 6
+    token: <|assistant|>
+    purpose: assistant_role
+  - id: 7
+    token: <|tool|>
+    purpose: tool_role
+  - id: 8
+    token: <|end_of_turn|>
+    purpose: end_of_turn
+  - id: 9
+    token: <|tool_call|>
+    purpose: tool_call_start
+  - id: 10
+    token: <|/tool_call|>
+    purpose: tool_call_end
+  - id: 11
+    token: <|tool_result|>
+    purpose: tool_result_start
+  - id: 12
+    token: <|/tool_result|>
+    purpose: tool_result_end
+  - id: 13
+    token: <|think|>
+    purpose: thinking_start
+  - id: 14
+    token: <|/think|>
+    purpose: thinking_end
+training_data:
+  data_version_id: data-wikipedia-20231101-zh-smoke-v1-15549d052194
+  split: train
+  document_count: 980
+  expected_sha256: f24ffbcb346e8018aea815838f28661fe321afa81c5c1c337b80a5b4fb59c83a
+  input_path: data/processed/wikipedia-20231101-zh-split-v1/train.jsonl
+evaluation:
+  roundtrip_required: true
+  max_unknown_rate: 0.0
+  suites: [zh-Hans, en, zh-Hant, ja, code, math, whitespace]
+output_dir: artifacts/tokenizers/atom-tokenizer-smoke-v1
