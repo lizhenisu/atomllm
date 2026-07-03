@@ -1,0 +1,7 @@
+[project]
+name = "atomllm"
+version = "0.1.0"
+description = "A from-scratch 300M language model training and deployment project"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
