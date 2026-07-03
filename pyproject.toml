@@ -21,6 +21,7 @@ atomllm-deduplicate-wikipedia = "atomllm.data.deduplication:main"
 atomllm-split-wikipedia = "atomllm.data.splitting:main"
 atomllm-build-data-version = "atomllm.data.versioning:main"
 atomllm-train-tokenizer = "atomllm.tokenizer.training:main"
+atomllm-evaluate-tokenizer = "atomllm.tokenizer.evaluation:main"
 
 [dependency-groups]
 dev = [

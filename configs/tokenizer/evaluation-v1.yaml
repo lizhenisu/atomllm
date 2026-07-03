@@ -1,0 +1,51 @@
+schema_version: 1
+name: atom-tokenizer-smoke-eval-v1
+tokenizer_artifact: artifacts/tokenizers/atom-tokenizer-smoke-v1
+expected_artifact_id: tokenizer-atom-tokenizer-smoke-v1-68a63a30294f
+expected_tokenizer_sha256: c9cf3a0330dbc981639f1065357ae94b5e74acd8dacd43d67a1ebe4e9d5c3b59
+benchmark:
+  warmup_iterations: 10
+  measured_iterations: 100
+  batch_repetitions: 8
+suites:
+  zh-Hans:
+    - 今天天气很好，适合进行简体中文分词测试。
+    - 人工智能模型需要可靠、可复现的数据处理流程。
+    - 数字12345与中文标点，应该能够正确往返。
+    - 深圳是一座充满活力的城市。
+  en:
+    - The quick brown fox jumps over the lazy dog.
+    - AtomLLM builds a language model from scratch.
+    - Version 2.0 costs $19.95 and includes 3 updates.
+    - Whitespace and punctuation should round-trip exactly!
+  zh-Hant:
+    - 今天天氣很好，適合進行繁體中文分詞測試。
+    - 人工智慧模型需要可靠且可重現的資料流程。
+    - 數字12345與中文標點，應該能夠正確往返。
+    - 臺北是一座充滿活力的城市。
+  ja:
+    - これは日本語のトークナイザー評価です。
+    - 機械学習モデルを最初から構築します。
+    - 数字12345と句読点を正しく復元します。
+    - 東京は活気に満ちた都市です。
+  code:
+    - "def add(a, b):\n    return a + b\n"
+    - "for index, value in enumerate(values):\n    print(index, value)\n"
+    - "const result = items.map((item) => item.id);"
+    - "{\"name\":\"synthetic\",\"enabled\":true,\"count\":42}"
+  math:
+    - "∫_0^1 x^2 dx = 1/3"
+    - "E = mc²; a² + b² = c²"
+    - "P(A|B) = P(B|A)P(A)/P(B)"
+    - "矩阵 A ∈ ℝ^{m×n}，且 det(A) ≠ 0。"
+  digits:
+    - "0 1 2 3 4 5 6 7 8 9"
+    - "2026-07-03T12:34:56+08:00"
+    - "3.141592653589793238462643383279"
+    - "订单编号：000123456789；金额：¥98.76"
+  whitespace:
+    - "alpha  beta\tgamma"
+    - "first line\nsecond line\n"
+    - "indent:\n    level1\n        level2\n"
+    - "混合 空格\t制表符\n换行"
+output_dir: artifacts/tokenizer-evaluations/atom-tokenizer-smoke-eval-v1
