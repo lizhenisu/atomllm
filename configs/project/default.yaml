@@ -1,0 +1,5 @@
+experiment_name: smoke
+seed: 42
+device: cuda
+precision: bf16
+output_dir: artifacts
