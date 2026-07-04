@@ -10,6 +10,7 @@ dependencies = [
     "opencc-python-reimplemented>=0.1.7",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
+    "safetensors>=0.7.0",
     "tokenizers>=0.23.1",
     "torch",
 ]
@@ -24,6 +25,7 @@ atomllm-train-tokenizer = "atomllm.tokenizer.training:main"
 atomllm-evaluate-tokenizer = "atomllm.tokenizer.evaluation:main"
 atomllm-audit-tokenizer-smoke = "atomllm.tokenizer.audit:main"
 atomllm-count-model-parameters = "atomllm.model.config:main"
+atomllm-accept-micro-model = "atomllm.training.micro_acceptance:main"
 
 [dependency-groups]
 dev = [
