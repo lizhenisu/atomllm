@@ -1,0 +1,52 @@
+schema_version: 1
+name: atom-5m-stage4-baseline
+status: smoke
+seed: 42
+model:
+  config_path: configs/model/atom-micro-4m.yaml
+  config_sha256: b08bda1f54d11b959b7455eee974d3e00a917cbb017739fc8c2a9d1118e6d4bc
+  name: atom-micro-4m-v1
+  expected_parameter_count: 4465280
+data:
+  data_version_id: data-wikipedia-20231101-zh-smoke-v1-15549d052194
+  data_manifest_sha256: 3569f69d7914d175c5bc5290e2eb1123df4718647428482d80ff00427fd309e6
+  split: train
+  split_sha256: f24ffbcb346e8018aea815838f28661fe321afa81c5c1c337b80a5b4fb59c83a
+  tokenizer_version_id: tokenizer-version-atom-tokenizer-smoke-v1-566b3144c3c6
+  tokenizer_sha256: c9cf3a0330dbc981639f1065357ae94b5e74acd8dacd43d67a1ebe4e9d5c3b59
+  formal_training_eligible: false
+batch:
+  sequence_length: 128
+  micro_batch_size: 8
+  gradient_accumulation_steps: 4
+optimizer:
+  name: adamw
+  learning_rate: 0.003
+  beta1: 0.9
+  beta2: 0.95
+  epsilon: 1.0e-8
+  weight_decay: 0.0
+scheduler:
+  name: cosine
+  warmup_steps: 25
+  total_steps: 500
+  minimum_learning_rate_ratio: 0.1
+stability:
+  max_gradient_norm: 1.0
+  reject_non_finite_loss: true
+  reject_non_finite_gradient_norm: true
+checkpoint:
+  save_every_steps: 100
+  keep_last: 3
+  exact_resume: true
+  model_format: safetensors
+  save_optimizer: true
+  save_scheduler: true
+  save_rng_state: true
+  save_data_state: true
+runtime:
+  device: cuda
+  precision: bf16
+  gradient_checkpointing: false
+  compile_model: false
+  deterministic: true

@@ -1,0 +1,70 @@
+schema_version: 1
+name: atom-5m-stage4-matrix-v1
+status: smoke
+base_config_path: configs/training/atom-5m-baseline.yaml
+base_config_sha256: 182d9d2d127723edf37636aea1464a0809afb7eb1cee93ce8b8fa6c601b40793
+trials:
+  - name: baseline
+    scheduler: cosine
+    learning_rate: 0.003
+    warmup_steps: 25
+    weight_decay: 0.0
+    max_gradient_norm: 1.0
+    micro_batch_size: 8
+    gradient_accumulation_steps: 4
+  - name: learning-rate-low
+    scheduler: cosine
+    learning_rate: 0.001
+    warmup_steps: 25
+    weight_decay: 0.0
+    max_gradient_norm: 1.0
+    micro_batch_size: 8
+    gradient_accumulation_steps: 4
+  - name: learning-rate-high
+    scheduler: cosine
+    learning_rate: 0.005
+    warmup_steps: 25
+    weight_decay: 0.0
+    max_gradient_norm: 1.0
+    micro_batch_size: 8
+    gradient_accumulation_steps: 4
+  - name: constant-scheduler
+    scheduler: constant
+    learning_rate: 0.003
+    warmup_steps: 25
+    weight_decay: 0.0
+    max_gradient_norm: 1.0
+    micro_batch_size: 8
+    gradient_accumulation_steps: 4
+  - name: warmup-long
+    scheduler: cosine
+    learning_rate: 0.003
+    warmup_steps: 50
+    weight_decay: 0.0
+    max_gradient_norm: 1.0
+    micro_batch_size: 8
+    gradient_accumulation_steps: 4
+  - name: weight-decay
+    scheduler: cosine
+    learning_rate: 0.003
+    warmup_steps: 25
+    weight_decay: 0.1
+    max_gradient_norm: 1.0
+    micro_batch_size: 8
+    gradient_accumulation_steps: 4
+  - name: gradient-clip-low
+    scheduler: cosine
+    learning_rate: 0.003
+    warmup_steps: 25
+    weight_decay: 0.0
+    max_gradient_norm: 0.5
+    micro_batch_size: 8
+    gradient_accumulation_steps: 4
+  - name: tokens-per-step-high
+    scheduler: cosine
+    learning_rate: 0.003
+    warmup_steps: 25
+    weight_decay: 0.0
+    max_gradient_norm: 1.0
+    micro_batch_size: 8
+    gradient_accumulation_steps: 8

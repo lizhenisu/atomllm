@@ -26,6 +26,7 @@ atomllm-evaluate-tokenizer = "atomllm.tokenizer.evaluation:main"
 atomllm-audit-tokenizer-smoke = "atomllm.tokenizer.audit:main"
 atomllm-count-model-parameters = "atomllm.model.config:main"
 atomllm-accept-micro-model = "atomllm.training.micro_acceptance:main"
+atomllm-validate-training-plan = "atomllm.training.config:main"
 
 [dependency-groups]
 dev = [
