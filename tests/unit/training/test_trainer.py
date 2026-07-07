@@ -6,9 +6,10 @@ import torch
 
 from atomllm.model.config import load_model_config
 from atomllm.model.model import AtomLLM
-from atomllm.training.config import TrainingConfig, load_training_config
+from atomllm.training.config import TrainingConfig, file_sha256, load_training_config
 from atomllm.training.data import PackedTokenDataset, ResumableBatchIterator
-from atomllm.training.trainer import Trainer, TrainingError
+from atomllm.training.checkpoint import CheckpointIdentity, restore_training_checkpoint
+from atomllm.training.trainer import Trainer, TrainingError, train_with_checkpoints
 
 
 MODEL_CONFIG_PATH = Path("configs/model/atom-base-300m.yaml")
@@ -160,3 +161,58 @@ def test_trainer_rejects_runtime_and_schedule_mismatches(
     )
     with pytest.raises(TrainingError, match="exceed"):
         trainer.train(5)
+
+
+def test_train_with_checkpoints_saves_boundaries_and_resumes(
+    tmp_path: Path,
+    packed_dataset_dir: Path,
+) -> None:
+    torch.manual_seed(307)
+    initial_state = tiny_model().state_dict()
+    config = tiny_training_config()
+    dataset = PackedTokenDataset(packed_dataset_dir)
+    trainer = Trainer(
+        tiny_model(),
+        config,
+        ResumableBatchIterator(dataset, batch_size=2, seed=config.seed),
+    )
+    trainer.model.load_state_dict(initial_state)
+    identity = CheckpointIdentity(
+        run_id="managed-trainer-test",
+        project_version="0.1.0",
+        git_commit="0" * 40,
+        git_dirty=False,
+        tokenizer_sha256="a" * 64,
+        config_sha256=file_sha256(TRAINING_CONFIG_PATH),
+    )
+
+    result = train_with_checkpoints(
+        trainer,
+        target_steps=3,
+        checkpoints_dir=tmp_path / "checkpoints",
+        identity=identity,
+        save_every_steps=2,
+        keep_last=2,
+    )
+
+    assert result.trainer_state.global_step == 3
+    assert [event.checkpoint_id for event in result.checkpoint_events] == [
+        "step-000000002",
+        "step-000000003",
+    ]
+    assert result.checkpoint_events[-1].milestone is True
+
+    resumed = Trainer(
+        tiny_model(),
+        config,
+        ResumableBatchIterator(dataset, batch_size=2, seed=config.seed),
+    )
+    resumed.model.load_state_dict(initial_state)
+    manifest = restore_training_checkpoint(
+        resumed,
+        tmp_path / "checkpoints",
+        identity,
+    )
+
+    assert manifest["checkpoint_id"] == "step-000000003"
+    assert resumed.trainer_state().global_step == 3

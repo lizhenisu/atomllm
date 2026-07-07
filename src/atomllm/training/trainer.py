@@ -6,19 +6,23 @@ import argparse
 import json
 import math
 import shutil
+import subprocess
 import time
 from contextlib import nullcontext
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import ContextManager
+import tomllib
 
 import torch
+import yaml
 
 from atomllm.config import ProjectConfig
-from atomllm.experiment import create_run, set_seed
+from atomllm.experiment import RunContext, create_run, set_seed
 from atomllm.model.config import load_model_config
 from atomllm.model.model import AtomLLM
-from atomllm.training.config import TrainingConfig, load_training_config
+from atomllm.training.config import TrainingConfig, file_sha256, load_training_config
 from atomllm.training.data import PackedTokenDataset, ResumableBatchIterator
 from atomllm.training.scheduler import LearningRateScheduler
 from atomllm.training.state import DataState, TrainerState
@@ -44,6 +48,28 @@ class TrainingResult:
     trainer_state: TrainerState
     data_state: DataState
     step_metrics: tuple[StepMetrics, ...]
+    peak_allocated_gib: float
+    peak_reserved_gib: float
+    tokens_per_second: float
+
+
+@dataclass(frozen=True, slots=True)
+class CheckpointEvent:
+    global_step: int
+    checkpoint_id: str
+    manifest_sha256: str
+    milestone: bool
+    removed_checkpoint_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ManagedTrainingResult:
+    trainer_state: TrainerState
+    data_state: DataState
+    step_metrics: tuple[StepMetrics, ...]
+    checkpoint_events: tuple[CheckpointEvent, ...]
+    restored_checkpoint_id: str | None
+    restored_global_step: int | None
     peak_allocated_gib: float
     peak_reserved_gib: float
     tokens_per_second: float
@@ -258,6 +284,193 @@ class Trainer:
         )
 
 
+def _safe_run_id(value: str) -> str:
+    if not value or any(character in value for character in "/\\"):
+        raise TrainingError("run_id must be a safe path segment")
+    if value in {".", ".."}:
+        raise TrainingError("run_id cannot be '.' or '..'")
+    return value
+
+
+def _project_version(project_root: Path) -> str:
+    pyproject_path = project_root / "pyproject.toml"
+    try:
+        data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        raise TrainingError(
+            "cannot read project version from pyproject.toml"
+        ) from error
+    version = data.get("project", {}).get("version")
+    if not isinstance(version, str) or not version:
+        raise TrainingError("project.version is missing from pyproject.toml")
+    return version
+
+
+def _git_output(project_root: Path, *args: str) -> str:
+    try:
+        completed = subprocess.run(
+            ("git", *args),
+            cwd=project_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise TrainingError(f"git command failed: git {' '.join(args)}") from error
+    return completed.stdout.strip()
+
+
+def _git_commit(project_root: Path) -> str:
+    return _git_output(project_root, "rev-parse", "HEAD")
+
+
+def _git_dirty(project_root: Path) -> bool:
+    return bool(_git_output(project_root, "status", "--porcelain"))
+
+
+def _write_config_snapshot(config: ProjectConfig, destination: Path) -> None:
+    snapshot = asdict(config)
+    snapshot["output_dir"] = str(config.output_dir)
+    destination.write_text(
+        yaml.safe_dump(snapshot, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+
+def _create_named_run(config: ProjectConfig, run_id: str) -> RunContext:
+    run_dir = config.output_dir / _safe_run_id(run_id)
+    try:
+        run_dir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise FileExistsError(f"run directory already exists: {run_dir}") from error
+    checkpoints_dir = run_dir / "checkpoints"
+    logs_dir = run_dir / "logs"
+    reports_dir = run_dir / "reports"
+    checkpoints_dir.mkdir()
+    logs_dir.mkdir()
+    reports_dir.mkdir()
+    config_path = run_dir / "config.yaml"
+    _write_config_snapshot(config, config_path)
+    return RunContext(
+        run_id=run_id,
+        run_dir=run_dir,
+        checkpoints_dir=checkpoints_dir,
+        logs_dir=logs_dir,
+        reports_dir=reports_dir,
+        config_path=config_path,
+    )
+
+
+def _open_existing_run(output_dir: Path, run_id: str) -> RunContext:
+    run_dir = output_dir / _safe_run_id(run_id)
+    checkpoints_dir = run_dir / "checkpoints"
+    logs_dir = run_dir / "logs"
+    reports_dir = run_dir / "reports"
+    config_path = run_dir / "config.yaml"
+    for path in (run_dir, checkpoints_dir, logs_dir, reports_dir):
+        if not path.is_dir():
+            raise TrainingError(f"resume run directory is incomplete: {path}")
+    if not config_path.is_file():
+        raise TrainingError(f"resume run config snapshot is missing: {config_path}")
+    return RunContext(
+        run_id=run_id,
+        run_dir=run_dir,
+        checkpoints_dir=checkpoints_dir,
+        logs_dir=logs_dir,
+        reports_dir=reports_dir,
+        config_path=config_path,
+    )
+
+
+def create_or_open_run(
+    project_config: ProjectConfig,
+    *,
+    run_id: str | None,
+    resume: bool,
+) -> RunContext:
+    if resume:
+        if run_id is None:
+            raise TrainingError("--resume requires --run-id")
+        return _open_existing_run(project_config.output_dir, run_id)
+    if run_id is not None:
+        return _create_named_run(project_config, run_id)
+    return create_run(project_config)
+
+
+def train_with_checkpoints(
+    trainer: Trainer,
+    *,
+    target_steps: int,
+    checkpoints_dir: Path,
+    identity: object,
+    save_every_steps: int,
+    keep_last: int,
+) -> ManagedTrainingResult:
+    """Train to target_steps, saving exact-resume checkpoints on boundaries."""
+    from atomllm.training.checkpoint import save_training_checkpoint
+
+    if type(target_steps) is not int or target_steps <= 0:
+        raise ValueError("target_steps must be a positive integer")
+    if target_steps > trainer.config.scheduler.total_steps:
+        raise TrainingError("target steps exceed the configured schedule")
+    if save_every_steps <= 0:
+        raise TrainingError("save_every_steps must be positive")
+    current_step = trainer.trainer_state().global_step
+    if target_steps < current_step:
+        raise TrainingError("target steps are behind the restored checkpoint")
+
+    metrics: list[StepMetrics] = []
+    checkpoint_events: list[CheckpointEvent] = []
+    peak_allocated = 0.0
+    peak_reserved = 0.0
+    processed_tokens = 0
+    started = time.perf_counter()
+
+    while current_step < target_steps:
+        next_boundary = ((current_step // save_every_steps) + 1) * save_every_steps
+        segment_target = min(target_steps, next_boundary)
+        segment_steps = segment_target - current_step
+        result = trainer.train(segment_steps)
+        metrics.extend(result.step_metrics)
+        peak_allocated = max(peak_allocated, result.peak_allocated_gib)
+        peak_reserved = max(peak_reserved, result.peak_reserved_gib)
+        processed_tokens += (
+            segment_steps * trainer.config.batch.tokens_per_optimizer_step
+        )
+        current_step = result.trainer_state.global_step
+        if current_step % save_every_steps == 0 or current_step == target_steps:
+            milestone = current_step == target_steps
+            saved = save_training_checkpoint(
+                trainer,
+                checkpoints_dir,
+                identity,  # type: ignore[arg-type]
+                keep_last=keep_last,
+                milestone=milestone,
+            )
+            checkpoint_events.append(
+                CheckpointEvent(
+                    global_step=current_step,
+                    checkpoint_id=saved.checkpoint_id,
+                    manifest_sha256=saved.manifest_sha256,
+                    milestone=milestone,
+                    removed_checkpoint_ids=saved.removed_checkpoint_ids,
+                )
+            )
+
+    elapsed = time.perf_counter() - started
+    return ManagedTrainingResult(
+        trainer_state=trainer.trainer_state(),
+        data_state=trainer.data_iterator.state(),
+        step_metrics=tuple(metrics),
+        checkpoint_events=tuple(checkpoint_events),
+        restored_checkpoint_id=None,
+        restored_global_step=None,
+        peak_allocated_gib=peak_allocated,
+        peak_reserved_gib=peak_reserved,
+        tokens_per_second=processed_tokens / elapsed if processed_tokens else 0.0,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run the stage-4 Atom-5M baseline training loop."
@@ -272,11 +485,30 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("artifacts/training-data/atom-5m-wikipedia-128-v1"),
     )
-    parser.add_argument("--steps", type=int)
+    parser.add_argument(
+        "--steps",
+        type=int,
+        help="Target global step. Defaults to scheduler.total_steps.",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("artifacts/training-runs"),
+    )
+    parser.add_argument("--run-id")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Restore latest checkpoint from --run-id before training.",
+    )
+    parser.add_argument(
+        "--checkpoint-id",
+        help="Restore this checkpoint ID instead of latest when --resume is set.",
+    )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        help="Override checkpoint.save_every_steps from the training config.",
     )
     parser.add_argument("--project-root", type=Path, default=Path("."))
     return parser
@@ -284,6 +516,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.checkpoint_id is not None and not args.resume:
+        raise TrainingError("--checkpoint-id requires --resume")
     root = args.project_root.resolve()
     config = load_training_config(args.config, project_root=root)
     model_config = load_model_config(root / config.model.config_path)
@@ -321,30 +555,88 @@ def main(argv: list[str] | None = None) -> int:
     )
     trainer = Trainer(model, config, iterator)
     steps = args.steps if args.steps is not None else config.scheduler.total_steps
-    result = trainer.train(steps)
 
     project_config = ProjectConfig(
-        experiment_name="atom-5m-trainer-smoke",
+        experiment_name=config.name,
         seed=config.seed,
         device=config.runtime.device,
         precision=config.runtime.precision,
         output_dir=args.output_dir,
     )
-    run = create_run(project_config)
-    shutil.copy2(args.config, run.run_dir / "training-config.yaml")
-    report_path = run.reports_dir / "training-report.json"
+    run = create_or_open_run(
+        project_config,
+        run_id=args.run_id,
+        resume=args.resume,
+    )
+    if not args.resume:
+        shutil.copy2(args.config, run.run_dir / "training-config.yaml")
+
+    from atomllm.training.checkpoint import (
+        CheckpointIdentity,
+        restore_training_checkpoint,
+    )
+
+    checkpoint_identity = CheckpointIdentity(
+        run_id=run.run_id,
+        project_version=_project_version(root),
+        git_commit=_git_commit(root),
+        git_dirty=_git_dirty(root),
+        tokenizer_sha256=config.data.tokenizer_sha256,
+        config_sha256=file_sha256(root / args.config),
+    )
+    restored_manifest = None
+    if args.resume:
+        restored_manifest = restore_training_checkpoint(
+            trainer,
+            run.checkpoints_dir,
+            checkpoint_identity,
+            selected_checkpoint_id=args.checkpoint_id,
+        )
+
+    save_every_steps = (
+        args.checkpoint_every
+        if args.checkpoint_every is not None
+        else config.checkpoint.save_every_steps
+    )
+    result = train_with_checkpoints(
+        trainer,
+        target_steps=steps,
+        checkpoints_dir=run.checkpoints_dir,
+        identity=checkpoint_identity,
+        save_every_steps=save_every_steps,
+        keep_last=config.checkpoint.keep_last,
+    )
+    if restored_manifest is not None:
+        result = ManagedTrainingResult(
+            trainer_state=result.trainer_state,
+            data_state=result.data_state,
+            step_metrics=result.step_metrics,
+            checkpoint_events=result.checkpoint_events,
+            restored_checkpoint_id=restored_manifest["checkpoint_id"],
+            restored_global_step=restored_manifest["global_step"],
+            peak_allocated_gib=result.peak_allocated_gib,
+            peak_reserved_gib=result.peak_reserved_gib,
+            tokens_per_second=result.tokens_per_second,
+        )
+
+    report_path = (
+        run.reports_dir / f"training-report-{datetime.now():%Y%m%d-%H%M%S}.json"
+    )
     report_path.write_text(
         json.dumps(asdict(result), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     summary = {
+        "checkpoint_events": [asdict(event) for event in result.checkpoint_events],
         "data_state": asdict(result.data_state),
-        "final_loss": result.step_metrics[-1].loss,
+        "final_loss": result.step_metrics[-1].loss if result.step_metrics else None,
         "global_step": result.trainer_state.global_step,
-        "initial_loss": result.step_metrics[0].loss,
+        "initial_loss": result.step_metrics[0].loss if result.step_metrics else None,
         "peak_allocated_gib": result.peak_allocated_gib,
         "peak_reserved_gib": result.peak_reserved_gib,
         "run_id": run.run_id,
+        "restored_checkpoint_id": result.restored_checkpoint_id,
+        "restored_global_step": result.restored_global_step,
         "samples_seen": result.trainer_state.samples_seen,
         "tokens_per_second": result.tokens_per_second,
         "tokens_seen": result.trainer_state.tokens_seen,
