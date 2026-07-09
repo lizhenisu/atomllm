@@ -1,0 +1,151 @@
+schema_version: 1
+plan_id: atom-formal-data-v0-acquisition
+formal_plan_path: configs/data/formal-v0-sampling-plan.yaml
+target_estimated_tokens: 1000000
+token_estimator: pretokenizer-char-v1
+output_dir: artifacts/data/formal-v0/acquired-v4
+
+streams:
+  - stream_id: fineweb2-cmn-general
+    loader: hf_dataset
+    file_format: null
+    data_file: null
+    source_id: fineweb2-v2-1-1
+    dataset: HuggingFaceFW/fineweb-2
+    config_name: cmn_Hani
+    split: train
+    revision: af9c13333eb981300149d5ca60a8e9d659b276b9
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: url
+    language: auto-zh-script
+    content_type: general
+    target_estimated_tokens: 350000
+    initial_skip_records: 0
+
+  - stream_id: wikipedia-zh-encyclopedia
+    loader: hf_dataset
+    file_format: null
+    data_file: null
+    source_id: wikipedia-20231101
+    dataset: wikimedia/wikipedia
+    config_name: 20231101.zh
+    split: train
+    revision: b04c8d1ceb2f5cd4588862100d08de323dccfbaa
+    text_field: text
+    id_field: id
+    title_field: title
+    url_field: url
+    language: auto-zh-script
+    content_type: encyclopedia
+    target_estimated_tokens: 190000
+    initial_skip_records: 0
+
+  - stream_id: fineweb2-jpn-general
+    loader: hf_dataset
+    file_format: null
+    data_file: null
+    source_id: fineweb2-v2-1-1
+    dataset: HuggingFaceFW/fineweb-2
+    config_name: jpn_Jpan
+    split: train
+    revision: af9c13333eb981300149d5ca60a8e9d659b276b9
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: url
+    language: ja
+    content_type: general
+    target_estimated_tokens: 70000
+    initial_skip_records: 0
+
+  - stream_id: fineweb2-fra-general
+    loader: hf_dataset
+    file_format: null
+    data_file: null
+    source_id: fineweb2-v2-1-1
+    dataset: HuggingFaceFW/fineweb-2
+    config_name: fra_Latn
+    split: train
+    revision: af9c13333eb981300149d5ca60a8e9d659b276b9
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: url
+    language: fr
+    content_type: general
+    target_estimated_tokens: 30000
+    initial_skip_records: 0
+
+  - stream_id: open-web-math-en-math
+    loader: hf_dataset
+    file_format: null
+    data_file: null
+    source_id: open-web-math-2023-10
+    dataset: open-web-math/open-web-math
+    config_name: default
+    split: train
+    revision: fde8ef8de2300f5e778f56261843dab89f230815
+    text_field: text
+    id_field: url
+    title_field: null
+    url_field: url
+    language: en
+    content_type: math
+    target_estimated_tokens: 100000
+    initial_skip_records: 0
+
+  - stream_id: fineweb-edu-en-science
+    loader: hf_file
+    file_format: parquet
+    data_file: data/CC-MAIN-2013-20/train-00000-of-00014.parquet
+    source_id: fineweb-edu-2025-07
+    dataset: HuggingFaceFW/fineweb-edu
+    config_name: default
+    split: train
+    revision: 87f09149ef4734204d70ed1d046ddc9ca3f2b8f9
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: url
+    language: en
+    content_type: science
+    target_estimated_tokens: 50000
+    initial_skip_records: 0
+
+  - stream_id: pes2o-en-science
+    loader: hf_file
+    file_format: json
+    data_file: data/v3/train-0000-of-0136.zst
+    source_id: pes2o-v3
+    dataset: allenai/peS2o
+    config_name: default
+    split: train
+    revision: 636a503e44a3ca1b58e01fb61eab0825cd574de0
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: null
+    language: en
+    content_type: science
+    target_estimated_tokens: 50000
+    initial_skip_records: 0
+
+  - stream_id: common-pile-stackexchange-code
+    loader: hf_file
+    file_format: json
+    data_file: stackexchange/stackexchange.chunk.00.jsonl.gz
+    source_id: common-pile-comma-v0-1
+    dataset: common-pile/comma_v0.1_training_dataset
+    config_name: default
+    split: train
+    revision: 5afc546db324e7f39f297ba757c9a60547151e7c
+    text_field: text
+    id_field: null
+    title_field: null
+    url_field: null
+    language: en
+    content_type: code
+    target_estimated_tokens: 160000
+    initial_skip_records: 0
