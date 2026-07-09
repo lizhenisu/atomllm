@@ -3,9 +3,27 @@ plan_id: atom-formal-data-v0-acquisition
 formal_plan_path: configs/data/formal-v0-sampling-plan.yaml
 target_estimated_tokens: 1000000
 token_estimator: pretokenizer-char-v1
-output_dir: artifacts/data/formal-v0/acquired-v4
+output_dir: artifacts/data/formal-v0/acquired-v8
 
 streams:
+  - stream_id: industry-corpus2-zh-general
+    loader: hf_file
+    file_format: parquet
+    data_file: fire_safety_food_safety/chinese/middle/rank_00473.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    target_estimated_tokens: 200000
+    initial_skip_records: 0
+
   - stream_id: fineweb2-cmn-general
     loader: hf_dataset
     file_format: null
@@ -21,7 +39,7 @@ streams:
     url_field: url
     language: auto-zh-script
     content_type: general
-    target_estimated_tokens: 350000
+    target_estimated_tokens: 165000
     initial_skip_records: 0
 
   - stream_id: wikipedia-zh-encyclopedia
@@ -57,7 +75,7 @@ streams:
     url_field: url
     language: ja
     content_type: general
-    target_estimated_tokens: 70000
+    target_estimated_tokens: 25000
     initial_skip_records: 0
 
   - stream_id: fineweb2-fra-general
@@ -75,7 +93,25 @@ streams:
     url_field: url
     language: fr
     content_type: general
-    target_estimated_tokens: 30000
+    target_estimated_tokens: 10000
+    initial_skip_records: 0
+
+  - stream_id: fineweb-en-general
+    loader: hf_file
+    file_format: parquet
+    data_file: data/CC-MAIN-2013-20/000_00000.parquet
+    source_id: fineweb-2025-07
+    dataset: HuggingFaceFW/fineweb
+    config_name: default
+    split: train
+    revision: 9bb295ddab0e05d785b879661af7260fed5140fc
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: url
+    language: en
+    content_type: general
+    target_estimated_tokens: 110000
     initial_skip_records: 0
 
   - stream_id: open-web-math-en-math
@@ -93,25 +129,7 @@ streams:
     url_field: url
     language: en
     content_type: math
-    target_estimated_tokens: 100000
-    initial_skip_records: 0
-
-  - stream_id: fineweb-edu-en-science
-    loader: hf_file
-    file_format: parquet
-    data_file: data/CC-MAIN-2013-20/train-00000-of-00014.parquet
-    source_id: fineweb-edu-2025-07
-    dataset: HuggingFaceFW/fineweb-edu
-    config_name: default
-    split: train
-    revision: 87f09149ef4734204d70ed1d046ddc9ca3f2b8f9
-    text_field: text
-    id_field: id
-    title_field: null
-    url_field: url
-    language: en
-    content_type: science
-    target_estimated_tokens: 50000
+    target_estimated_tokens: 80000
     initial_skip_records: 0
 
   - stream_id: pes2o-en-science
@@ -129,7 +147,7 @@ streams:
     url_field: null
     language: en
     content_type: science
-    target_estimated_tokens: 50000
+    target_estimated_tokens: 100000
     initial_skip_records: 0
 
   - stream_id: common-pile-stackexchange-code
@@ -147,5 +165,5 @@ streams:
     url_field: null
     language: en
     content_type: code
-    target_estimated_tokens: 160000
+    target_estimated_tokens: 120000
     initial_skip_records: 0
