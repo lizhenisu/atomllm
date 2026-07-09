@@ -17,6 +17,7 @@ _PLAN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _BUCKET_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _LANGUAGE_PRIORITY = ("zh-Hans", "en", "zh-Hant", "ja", "other")
 _LANGUAGE_BUCKETS = frozenset(_LANGUAGE_PRIORITY)
+_PRETRAINING_CONTENT_TYPES = VALID_CONTENT_TYPES - {"conversation"}
 _QUALITY_BUCKETS = frozenset({"high", "standard", "exploratory"})
 _BUDGET_NAMES = ("smoke", "pilot", "main", "stretch")
 
@@ -289,7 +290,7 @@ class PretrainingMixture:
             budgets=TokenBudgets.from_mapping(mapping["budgets"]),
             language_mix=language_mix,
             content_mix=_parse_distribution(
-                mapping["content_mix"], VALID_CONTENT_TYPES, "content_mix"
+                mapping["content_mix"], _PRETRAINING_CONTENT_TYPES, "content_mix"
             ),
             quality_mix=_parse_distribution(
                 mapping["quality_mix"], _QUALITY_BUCKETS, "quality_mix"

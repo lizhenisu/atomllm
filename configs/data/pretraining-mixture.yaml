@@ -16,12 +16,11 @@ language_mix:
   other: 0.03
 
 content_mix:
-  general: 0.40
-  encyclopedia: 0.20
-  code: 0.15
+  general: 0.42
+  encyclopedia: 0.22
+  code: 0.16
   math: 0.10
   science: 0.10
-  conversation: 0.05
 
 quality_mix:
   high: 0.55

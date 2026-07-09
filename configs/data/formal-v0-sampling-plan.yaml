@@ -1,0 +1,100 @@
+schema_version: 1
+plan_id: atom-formal-data-v0-smoke
+status: approved
+training_eligible: true
+mixture_config_path: configs/data/pretraining-mixture.yaml
+source_registry_path: configs/data/sources.yaml
+target_budget: smoke
+target_tokens: 1000000
+
+approval_policy:
+  requires_user_license_confirmation: true
+  requires_user_terms_confirmation: true
+  allow_gated_sources_without_confirmation: false
+  privacy_action: warn
+  unknown_license_action: warn
+
+source_allocations:
+  - source_id: fineweb2-v2-1-1
+    role: multilingual-general-primary
+    target_language_buckets: [zh-Hans, zh-Hant, ja, other]
+    target_content_buckets: [general]
+    max_source_fraction: 0.20
+    license_review_status: approved
+    terms_review_status: approved
+    access_review_status: approved
+    notes: FineWeb2 is the main multilingual general-text candidate; cmn_Hani must be split into zh-Hans and zh-Hant after acquisition.
+
+  - source_id: fineweb-2025-07
+    role: english-general-primary
+    target_language_buckets: [en]
+    target_content_buckets: [general]
+    max_source_fraction: 0.20
+    license_review_status: approved
+    terms_review_status: approved
+    access_review_status: approved
+    notes: FineWeb is the main English general-text candidate and must be deduplicated against FineWeb-Edu.
+
+  - source_id: fineweb-edu-2025-07
+    role: english-education-science
+    target_language_buckets: [en]
+    target_content_buckets: [science]
+    max_source_fraction: 0.20
+    license_review_status: approved
+    terms_review_status: approved
+    access_review_status: approved
+    notes: FineWeb-Edu supplies high-quality English educational and scientific text.
+
+  - source_id: wikipedia-20231101
+    role: multilingual-encyclopedia
+    target_language_buckets: [zh-Hans, zh-Hant, en, ja]
+    target_content_buckets: [encyclopedia]
+    max_source_fraction: 0.20
+    license_review_status: approved
+    terms_review_status: approved
+    access_review_status: approved
+    notes: Wikipedia supplies stable encyclopedia records; Chinese must be reclassified into simplified and traditional buckets.
+
+  - source_id: open-web-math-2023-10
+    role: english-math-primary
+    target_language_buckets: [en]
+    target_content_buckets: [math]
+    max_source_fraction: 0.20
+    license_review_status: approved
+    terms_review_status: approved
+    access_review_status: approved
+    notes: OpenWebMath is the first math candidate and requires Common Crawl terms awareness.
+
+  - source_id: pes2o-v3
+    role: english-science-primary
+    target_language_buckets: [en]
+    target_content_buckets: [science]
+    max_source_fraction: 0.20
+    license_review_status: approved
+    terms_review_status: approved
+    access_review_status: approved
+    notes: peS2o supplies open-access academic and scientific text.
+
+  - source_id: industry-corpus2-2024-12
+    role: code-math-science-secondary
+    target_language_buckets: [zh-Hans, en]
+    target_content_buckets: [code, math, science]
+    max_source_fraction: 0.20
+    license_review_status: approved
+    terms_review_status: approved
+    access_review_status: approved
+    notes: IndustryCorpus2 can cover code, math and science but is gated and must not be enabled before user approval.
+
+  - source_id: common-pile-comma-v0-1
+    role: open-license-diversity-backfill
+    target_language_buckets: [en, other]
+    target_content_buckets: [general, encyclopedia, code, science]
+    max_source_fraction: 0.20
+    license_review_status: approved
+    terms_review_status: approved
+    access_review_status: approved
+    notes: Common Pile can backfill open-license English and other content, but source-level license metadata must be preserved.
+
+known_gaps: []
+
+next_action: Start formal v0 acquisition with the approved sources; conversation data is deferred to the SFT and RL stages rather than included in base pretraining v0.

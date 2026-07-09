@@ -25,6 +25,7 @@ def test_loads_default_pretraining_mixture() -> None:
     assert mixture.model_id == "Atom-Base-300M"
     assert mixture.budgets.smoke == 1_000_000
     assert mixture.budgets.main == 1_000_000_000
+    assert "conversation" not in mixture.content_mix
     assert mixture.constraints.privacy_action == "warn"
 
 
@@ -63,6 +64,17 @@ def test_distribution_rejects_unknown_bucket(
     data["language_mix"]["synthetic"] = 0.01
 
     with pytest.raises(MixtureConfigError, match="language_mix.*unknown fields"):
+        PretrainingMixture.from_mapping(data)
+
+
+def test_pretraining_content_mix_defers_conversation_to_sft(
+    raw_mixture: dict[str, object],
+) -> None:
+    data = deepcopy(raw_mixture)
+    data["content_mix"]["conversation"] = 0.01
+    data["content_mix"]["general"] -= 0.01
+
+    with pytest.raises(MixtureConfigError, match="content_mix.*unknown fields"):
         PretrainingMixture.from_mapping(data)
 
 
