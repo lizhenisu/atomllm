@@ -38,7 +38,7 @@ def test_loads_default_formal_v0_plan_as_approved() -> None:
     assert plan.status == "approved"
     assert plan.training_eligible is True
     assert plan.target_tokens == 1_000_000
-    assert len(plan.source_allocations) == 8
+    assert len(plan.source_allocations) == 9
     assert plan.known_gaps == ()
 
 

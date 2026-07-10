@@ -61,6 +61,21 @@ sources:
       revision: d6f3aa30cebfef497e822ff968ed68a18bf90b8f
       expected_sha256: null
 
+  - source_id: chinese-c4-2026-07
+    name: Chinese-C4
+    version: "2026-07-10"
+    license: CC-BY-4.0
+    homepage: https://huggingface.co/datasets/shjwudp/chinese-c4
+    languages: [zh]
+    content_types: [general]
+    data_format: jsonl-zstd
+    enabled: false
+    acquisition:
+      provider: huggingface
+      location: shjwudp/chinese-c4
+      revision: 4083a8159b907eaa2c1bb87b1891e14fdf0ad5cf
+      expected_sha256: null
+
   - source_id: industry-corpus2-2024-12
     name: IndustryCorpus2
     version: "2024-12-17"

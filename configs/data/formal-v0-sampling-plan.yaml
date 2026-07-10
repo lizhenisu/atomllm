@@ -15,6 +15,16 @@ approval_policy:
   unknown_license_action: warn
 
 source_allocations:
+  - source_id: chinese-c4-2026-07
+    role: chinese-general-capacity-backfill
+    target_language_buckets: [zh-Hans, zh-Hant]
+    target_content_buckets: [general]
+    max_source_fraction: 0.20
+    license_review_status: approved
+    terms_review_status: approved
+    access_review_status: approved
+    notes: Chinese-C4 is a public CC-BY-4.0 Chinese Common Crawl corpus pinned to a commit; the 70G capacity replan uses six small zstd shards and retains later cross-source deduplication.
+
   - source_id: fineweb2-v2-1-1
     role: multilingual-general-primary
     target_language_buckets: [zh-Hans, zh-Hant, ja, other]

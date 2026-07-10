@@ -61,9 +61,9 @@ def test_loads_default_disabled_candidate_registry() -> None:
 
     assert registry.schema_version == 1
     assert registry.privacy_action == "warn"
-    assert len(registry.sources) == 12
+    assert len(registry.sources) == 13
     assert all(not source.enabled for source in registry.sources)
-    assert len({source.source_id for source in registry.sources}) == 12
+    assert len({source.source_id for source in registry.sources}) == 13
     assert all(len(source.acquisition.revision) == 40 for source in registry.sources)
 
 

@@ -1,0 +1,623 @@
+schema_version: 1
+plan_id: atom-formal-data-70g-space-v1
+formal_plan_path: configs/data/formal-v0-sampling-plan.yaml
+target_document_bytes: 70000000000
+output_dir: artifacts/data/formal-70g/acquired-space-v1
+minimum_free_bytes: 85000000000
+checkpoint_every_records: 1000
+checkpoint_every_bytes: 268435456
+# Keep a 10MB margin below the 20% source cap so a final record cannot cross it.
+source_target_ceiling_bytes: 13999000000
+# If any remote stream ends early, its unfinished budget is moved to these
+# later streams in order, without allowing any source to exceed the ceiling.
+exhaustion_fallback_stream_ids:
+  - open-web-math-en-math
+  - pes2o-en-science-00
+  - pes2o-en-science-01
+  - pes2o-en-science-02
+  - common-pile-stackexchange-code-00
+  - common-pile-stackexchange-code-01
+  - common-pile-stackexchange-code-02
+  - common-pile-stackexchange-code-03
+  - chinese-c4-zh-general-00
+  - chinese-c4-zh-general-01
+  - chinese-c4-zh-general-02
+  - chinese-c4-zh-general-03
+  - chinese-c4-zh-general-04
+  - chinese-c4-zh-general-05
+
+streams:
+  - stream_id: industry-corpus2-zh-general-00
+    loader: hf_file
+    file_format: parquet
+    data_file: literature_emotion/chinese/high/rank_00066.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165836485
+
+  - stream_id: industry-corpus2-zh-general-01
+    loader: hf_file
+    file_format: parquet
+    data_file: literature_emotion/chinese/middle/rank_00512.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165844043
+
+  - stream_id: industry-corpus2-zh-general-02
+    loader: hf_file
+    file_format: parquet
+    data_file: literature_emotion/chinese/middle/rank_00514.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165839526
+
+  - stream_id: industry-corpus2-zh-general-03
+    loader: hf_file
+    file_format: parquet
+    data_file: literature_emotion/chinese/middle/rank_00515.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165835298
+
+  - stream_id: industry-corpus2-zh-general-04
+    loader: hf_file
+    file_format: parquet
+    data_file: literature_emotion/chinese/middle/rank_00523.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165834770
+
+  - stream_id: industry-corpus2-zh-general-05
+    loader: hf_file
+    file_format: parquet
+    data_file: literature_emotion/chinese/middle/rank_00510.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165834759
+
+  - stream_id: industry-corpus2-zh-general-06
+    loader: hf_file
+    file_format: parquet
+    data_file: literature_emotion/chinese/high/rank_00065.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165837069
+
+  - stream_id: industry-corpus2-zh-general-07
+    loader: hf_file
+    file_format: parquet
+    data_file: literature_emotion/chinese/middle/rank_00518.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165835474
+
+  - stream_id: industry-corpus2-zh-general-08
+    loader: hf_file
+    file_format: parquet
+    data_file: literature_emotion/chinese/middle/rank_00509.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165868169
+
+  - stream_id: industry-corpus2-zh-general-09
+    loader: hf_file
+    file_format: parquet
+    data_file: literature_emotion/chinese/middle/rank_00516.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165849721
+
+  - stream_id: industry-corpus2-zh-general-10
+    loader: hf_file
+    file_format: parquet
+    data_file: film_entertainment/chinese/high/rank_00043.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165837441
+
+  - stream_id: industry-corpus2-zh-general-11
+    loader: hf_file
+    file_format: parquet
+    data_file: film_entertainment/chinese/high/rank_00042.parquet
+    source_id: industry-corpus2-2024-12
+    dataset: BAAI/IndustryCorpus2
+    config_name: default
+    split: train
+    revision: 1721eecd696e4110d33a255440f3c7ce981140ee
+    text_field: text
+    id_field: _id
+    title_field: null
+    url_field: null
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1165835108
+
+  - stream_id: fineweb2-cmn-general
+    loader: hf_dataset
+    file_format: null
+    data_file: null
+    source_id: fineweb2-v2-1-1
+    dataset: HuggingFaceFW/fineweb-2
+    config_name: cmn_Hani
+    split: train
+    revision: af9c13333eb981300149d5ca60a8e9d659b276b9
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: url
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 11890003806
+
+  - stream_id: wikipedia-zh-encyclopedia
+    loader: hf_dataset
+    file_format: null
+    data_file: null
+    source_id: wikipedia-20231101
+    dataset: wikimedia/wikipedia
+    config_name: 20231101.zh
+    split: train
+    revision: b04c8d1ceb2f5cd4588862100d08de323dccfbaa
+    text_field: text
+    id_field: id
+    title_field: title
+    url_field: url
+    language: auto-zh-script
+    content_type: encyclopedia
+    initial_skip_records: 0
+    # Dataset capacity was measured during the live run: 1,384,748 records.
+    target_document_bytes: 3611715653
+
+  - stream_id: fineweb2-jpn-general
+    loader: hf_dataset
+    file_format: null
+    data_file: null
+    source_id: fineweb2-v2-1-1
+    dataset: HuggingFaceFW/fineweb-2
+    config_name: jpn_Jpan
+    split: train
+    revision: af9c13333eb981300149d5ca60a8e9d659b276b9
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: url
+    language: ja
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 1400026804
+
+  - stream_id: fineweb2-fra-general
+    loader: hf_dataset
+    file_format: null
+    data_file: null
+    source_id: fineweb2-v2-1-1
+    dataset: HuggingFaceFW/fineweb-2
+    config_name: fra_Latn
+    split: train
+    revision: af9c13333eb981300149d5ca60a8e9d659b276b9
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: url
+    language: fr
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 700000767
+
+  - stream_id: fineweb-en-general-00
+    loader: hf_file
+    file_format: parquet
+    data_file: data/CC-MAIN-2013-20/000_00019.parquet
+    source_id: fineweb-2025-07
+    dataset: HuggingFaceFW/fineweb
+    config_name: default
+    split: train
+    revision: 9bb295ddab0e05d785b879661af7260fed5140fc
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: url
+    language: en
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 4006886541
+
+  - stream_id: fineweb-en-general-01
+    loader: hf_file
+    file_format: parquet
+    data_file: data/CC-MAIN-2013-20/000_00016.parquet
+    source_id: fineweb-2025-07
+    dataset: HuggingFaceFW/fineweb
+    config_name: default
+    split: train
+    revision: 9bb295ddab0e05d785b879661af7260fed5140fc
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: url
+    language: en
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 4005085042
+
+  - stream_id: fineweb-en-general-02
+    loader: hf_file
+    file_format: parquet
+    data_file: data/CC-MAIN-2013-20/000_00005.parquet
+    source_id: fineweb-2025-07
+    dataset: HuggingFaceFW/fineweb
+    config_name: default
+    split: train
+    revision: 9bb295ddab0e05d785b879661af7260fed5140fc
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: url
+    language: en
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 4007044371
+
+  - stream_id: open-web-math-en-math
+    loader: hf_dataset
+    file_format: null
+    data_file: null
+    source_id: open-web-math-2023-10
+    dataset: open-web-math/open-web-math
+    config_name: default
+    split: train
+    revision: fde8ef8de2300f5e778f56261843dab89f230815
+    text_field: text
+    id_field: url
+    title_field: null
+    url_field: url
+    language: en
+    content_type: math
+    initial_skip_records: 0
+    target_document_bytes: 10289270492
+
+  - stream_id: pes2o-en-science-00
+    loader: hf_file
+    file_format: json
+    data_file: data/v3/train-0037-of-0136.zst
+    source_id: pes2o-v3
+    dataset: allenai/peS2o
+    config_name: default
+    split: train
+    revision: 636a503e44a3ca1b58e01fb61eab0825cd574de0
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: null
+    language: en
+    content_type: science
+    initial_skip_records: 0
+    target_document_bytes: 2333364682
+
+  - stream_id: pes2o-en-science-01
+    loader: hf_file
+    file_format: json
+    data_file: data/v3/train-0048-of-0136.zst
+    source_id: pes2o-v3
+    dataset: allenai/peS2o
+    config_name: default
+    split: train
+    revision: 636a503e44a3ca1b58e01fb61eab0825cd574de0
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: null
+    language: en
+    content_type: science
+    initial_skip_records: 0
+    target_document_bytes: 2333348667
+
+  - stream_id: pes2o-en-science-02
+    loader: hf_file
+    file_format: json
+    data_file: data/v3/train-0098-of-0136.zst
+    source_id: pes2o-v3
+    dataset: allenai/peS2o
+    config_name: default
+    split: train
+    revision: 636a503e44a3ca1b58e01fb61eab0825cd574de0
+    text_field: text
+    id_field: id
+    title_field: null
+    url_field: null
+    language: en
+    content_type: science
+    initial_skip_records: 0
+    target_document_bytes: 2333350763
+
+  - stream_id: common-pile-stackexchange-code-00
+    loader: hf_file
+    file_format: json
+    data_file: stackexchange/stackexchange.chunk.25.jsonl.gz
+    source_id: common-pile-comma-v0-1
+    dataset: common-pile/comma_v0.1_training_dataset
+    config_name: default
+    split: train
+    revision: 5afc546db324e7f39f297ba757c9a60547151e7c
+    text_field: text
+    id_field: null
+    title_field: null
+    url_field: null
+    language: en
+    content_type: code
+    initial_skip_records: 0
+    target_document_bytes: 1743863973
+
+  - stream_id: common-pile-stackexchange-code-01
+    loader: hf_file
+    file_format: json
+    data_file: stackexchange/stackexchange.chunk.23.jsonl.gz
+    source_id: common-pile-comma-v0-1
+    dataset: common-pile/comma_v0.1_training_dataset
+    config_name: default
+    split: train
+    revision: 5afc546db324e7f39f297ba757c9a60547151e7c
+    text_field: text
+    id_field: null
+    title_field: null
+    url_field: null
+    language: en
+    content_type: code
+    initial_skip_records: 0
+    target_document_bytes: 1742619264
+
+  - stream_id: common-pile-stackexchange-code-02
+    loader: hf_file
+    file_format: json
+    data_file: stackexchange/stackexchange.chunk.09.jsonl.gz
+    source_id: common-pile-comma-v0-1
+    dataset: common-pile/comma_v0.1_training_dataset
+    config_name: default
+    split: train
+    revision: 5afc546db324e7f39f297ba757c9a60547151e7c
+    text_field: text
+    id_field: null
+    title_field: null
+    url_field: null
+    language: en
+    content_type: code
+    initial_skip_records: 0
+    target_document_bytes: 1742429792
+
+  - stream_id: common-pile-stackexchange-code-03
+    loader: hf_file
+    file_format: json
+    data_file: stackexchange/stackexchange.chunk.51.jsonl.gz
+    source_id: common-pile-comma-v0-1
+    dataset: common-pile/comma_v0.1_training_dataset
+    config_name: default
+    split: train
+    revision: 5afc546db324e7f39f297ba757c9a60547151e7c
+    text_field: text
+    id_field: null
+    title_field: null
+    url_field: null
+    language: en
+    content_type: code
+    initial_skip_records: 0
+    target_document_bytes: 1742464513
+
+  - stream_id: chinese-c4-zh-general-00
+    loader: hf_file
+    file_format: json
+    data_file: data/chinese-c4-0000-of-0096.jsonl.zst
+    source_id: chinese-c4-2026-07
+    dataset: shjwudp/chinese-c4
+    config_name: default
+    split: train
+    revision: 4083a8159b907eaa2c1bb87b1891e14fdf0ad5cf
+    text_field: text
+    id_field: url
+    title_field: null
+    url_field: url
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 354739501
+
+  - stream_id: chinese-c4-zh-general-01
+    loader: hf_file
+    file_format: json
+    data_file: data/chinese-c4-0001-of-0096.jsonl.zst
+    source_id: chinese-c4-2026-07
+    dataset: shjwudp/chinese-c4
+    config_name: default
+    split: train
+    revision: 4083a8159b907eaa2c1bb87b1891e14fdf0ad5cf
+    text_field: text
+    id_field: url
+    title_field: null
+    url_field: url
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 354739501
+
+  - stream_id: chinese-c4-zh-general-02
+    loader: hf_file
+    file_format: json
+    data_file: data/chinese-c4-0002-of-0096.jsonl.zst
+    source_id: chinese-c4-2026-07
+    dataset: shjwudp/chinese-c4
+    config_name: default
+    split: train
+    revision: 4083a8159b907eaa2c1bb87b1891e14fdf0ad5cf
+    text_field: text
+    id_field: url
+    title_field: null
+    url_field: url
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 354739501
+
+  - stream_id: chinese-c4-zh-general-03
+    loader: hf_file
+    file_format: json
+    data_file: data/chinese-c4-0003-of-0096.jsonl.zst
+    source_id: chinese-c4-2026-07
+    dataset: shjwudp/chinese-c4
+    config_name: default
+    split: train
+    revision: 4083a8159b907eaa2c1bb87b1891e14fdf0ad5cf
+    text_field: text
+    id_field: url
+    title_field: null
+    url_field: url
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 354739501
+
+  - stream_id: chinese-c4-zh-general-04
+    loader: hf_file
+    file_format: json
+    data_file: data/chinese-c4-0004-of-0096.jsonl.zst
+    source_id: chinese-c4-2026-07
+    dataset: shjwudp/chinese-c4
+    config_name: default
+    split: train
+    revision: 4083a8159b907eaa2c1bb87b1891e14fdf0ad5cf
+    text_field: text
+    id_field: url
+    title_field: null
+    url_field: url
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 354739501
+
+  - stream_id: chinese-c4-zh-general-05
+    loader: hf_file
+    file_format: json
+    data_file: data/chinese-c4-0005-of-0096.jsonl.zst
+    source_id: chinese-c4-2026-07
+    dataset: shjwudp/chinese-c4
+    config_name: default
+    split: train
+    revision: 4083a8159b907eaa2c1bb87b1891e14fdf0ad5cf
+    text_field: text
+    id_field: url
+    title_field: null
+    url_field: url
+    language: auto-zh-script
+    content_type: general
+    initial_skip_records: 0
+    target_document_bytes: 354739502
