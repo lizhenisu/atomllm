@@ -1,0 +1,18 @@
+schema_version: 1
+processing_id: atom-formal-data-70g-v1
+input_dir: artifacts/data/formal-70g/acquired-space-v1
+clean_dir: artifacts/data/formal-70g/clean-v1
+fingerprint_dir: artifacts/data/formal-70g/fingerprint-v1
+exact_dedup_dir: artifacts/data/formal-70g/exact-dedup-v1
+near_dedup_dir: artifacts/data/formal-70g/near-dedup-v8
+split_dir: artifacts/data/formal-70g/split-v1
+audit_dir: artifacts/data/formal-70g/audit-v1
+records_per_shard: 100000
+splits:
+  train: 0.99
+  validation: 0.01
+validation_selection:
+  quality_warnings: ascending
+  min_estimated_tokens: 512
+  max_estimated_tokens: 7168
+  stable_tie_breaker: sha256
