@@ -228,13 +228,25 @@ def verify_tokenizer_artifact(
         config.tokenizer_artifact,
         "tokenizer_artifact",
     )
-    manifest_path = artifact_dir / "manifest.json"
-    completed_path = artifact_dir / "COMPLETED"
+    tokenizer, manifest, manifest_path = verify_tokenizer_directory(artifact_dir)
+    if manifest.get("artifact_id") != config.expected_artifact_id:
+        raise TokenizerEvaluationError("tokenizer artifact ID does not match config")
+    tokenizer_path = artifact_dir / "tokenizer.json"
+    if _sha256(tokenizer_path) != config.expected_tokenizer_sha256:
+        raise TokenizerEvaluationError("tokenizer.json SHA-256 does not match config")
+    return tokenizer, manifest, manifest_path
+
+
+def verify_tokenizer_directory(
+    artifact_dir: str | Path,
+) -> tuple[Tokenizer, dict[str, Any], Path]:
+    """Verify a completed tokenizer directory without pinning a caller's identity."""
+    directory = Path(artifact_dir)
+    manifest_path = directory / "manifest.json"
+    completed_path = directory / "COMPLETED"
     if not manifest_path.is_file() or not completed_path.is_file():
         raise TokenizerEvaluationError("tokenizer artifact is incomplete")
     manifest = _read_json(manifest_path, "tokenizer manifest")
-    if manifest.get("artifact_id") != config.expected_artifact_id:
-        raise TokenizerEvaluationError("tokenizer artifact ID does not match config")
     files = manifest.get("files")
     if not isinstance(files, dict):
         raise TokenizerEvaluationError("tokenizer manifest has invalid files")
@@ -245,14 +257,14 @@ def verify_tokenizer_artifact(
             or not isinstance(metadata, dict)
         ):
             raise TokenizerEvaluationError("tokenizer file metadata is invalid")
-        file_path = artifact_dir / name
+        file_path = directory / name
         if not file_path.is_file() or _sha256(file_path) != metadata.get("sha256"):
             raise TokenizerEvaluationError(
                 f"tokenizer artifact file SHA-256 mismatch: {name}"
             )
-    tokenizer_path = artifact_dir / "tokenizer.json"
-    if _sha256(tokenizer_path) != config.expected_tokenizer_sha256:
-        raise TokenizerEvaluationError("tokenizer.json SHA-256 does not match config")
+    tokenizer_path = directory / "tokenizer.json"
+    if not tokenizer_path.is_file():
+        raise TokenizerEvaluationError("tokenizer.json is missing")
     if completed_path.read_text(encoding="utf-8") != (
         f"{_sha256(manifest_path)}  manifest.json\n"
     ):

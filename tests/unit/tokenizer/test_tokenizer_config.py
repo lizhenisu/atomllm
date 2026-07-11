@@ -29,6 +29,15 @@ def test_loads_committed_smoke_config() -> None:
     assert config.status == "smoke"
     assert config.training_eligible is False
     assert config.training_data.document_count == 980
+    assert config.evaluation.suites == (
+        "zh-Hans",
+        "en",
+        "zh-Hant",
+        "ja",
+        "code",
+        "math",
+        "whitespace",
+    )
     assert (
         tuple(
             (token.token_id, token.token, token.purpose)
@@ -114,6 +123,18 @@ def test_rejects_unknown_evaluation_suite(tmp_path: Path) -> None:
 
     with pytest.raises(TokenizerConfigError, match="unsupported values"):
         load_tokenizer_config(path)
+
+
+def test_accepts_digits_evaluation_suite(tmp_path: Path) -> None:
+    path = write_modified_config(
+        tmp_path,
+        "suites: [zh-Hans, en, zh-Hant, ja, code, math, whitespace]",
+        "suites: [zh-Hans, en, zh-Hant, ja, code, math, digits, whitespace]",
+    )
+
+    config = load_tokenizer_config(path)
+
+    assert "digits" in config.evaluation.suites
 
 
 def test_rejects_unknown_top_level_field(tmp_path: Path) -> None:

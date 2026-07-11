@@ -3,8 +3,8 @@ name: atom-base-300m-v1
 status: smoke
 architecture: decoder_only_transformer
 tokenizer:
-  version_id: tokenizer-version-atom-tokenizer-smoke-v1-566b3144c3c6
-  tokenizer_sha256: c9cf3a0330dbc981639f1065357ae94b5e74acd8dacd43d67a1ebe4e9d5c3b59
+  version_id: tokenizer-version-atom-tokenizer-formal-v1-936e948b3509
+  tokenizer_sha256: 7a3c19c63048274642f7bf324b7ecd36899a7c01c1de9b4584bf41102fb4fa14
   vocab_size: 32000
   special_token_ids:
     pad: 0

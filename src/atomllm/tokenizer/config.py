@@ -15,7 +15,16 @@ TOKENIZER_VOCAB_SIZE = 32_000
 TOKENIZER_MODEL_MAX_LENGTH = 8_192
 VALID_STATUSES = frozenset({"smoke", "release"})
 VALID_EVALUATION_SUITES = frozenset(
-    {"zh-Hans", "en", "zh-Hant", "ja", "code", "math", "whitespace"}
+    {
+        "zh-Hans",
+        "en",
+        "zh-Hant",
+        "ja",
+        "code",
+        "math",
+        "digits",
+        "whitespace",
+    }
 )
 EXPECTED_SPECIAL_TOKENS = (
     (0, "<pad>", "padding"),

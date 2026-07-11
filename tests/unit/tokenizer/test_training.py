@@ -98,6 +98,8 @@ def test_train_save_reload_and_idempotently_verify_artifact(
     assert second == first
     assert first["vocab_size"] == 512
     assert first["training_eligible"] is False
+    assert first["library_versions"]["tokenizer_training_workers"] == 1
+    assert first["library_versions"]["tokenizers_parallelism"] == "false"
     assert all(result["roundtrip"] for result in first["probe_results"].values())
     assert all(
         result["unknown_count"] == 0 for result in first["probe_results"].values()
@@ -112,3 +114,29 @@ def test_train_save_reload_and_idempotently_verify_artifact(
         handle.write("\n")
     with pytest.raises(TokenizerTrainingError, match="SHA-256 mismatch"):
         train_tokenizer(config_path, tmp_path)
+
+
+def test_rejects_invalid_training_worker_count(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = small_training_config(tmp_path)
+    config_path = tmp_path / "tokenizer.yaml"
+    config_path.write_text("synthetic tokenizer config\n", encoding="utf-8")
+    monkeypatch.setattr(training, "load_tokenizer_config", lambda _: config)
+
+    with pytest.raises(TokenizerTrainingError, match="workers must be"):
+        train_tokenizer(config_path, tmp_path, workers=0)
+
+
+def test_configures_parallel_training_workers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(training.os, "cpu_count", lambda: 8)
+    monkeypatch.setenv("RAYON_NUM_THREADS", "1")
+    monkeypatch.setenv("TOKENIZERS_PARALLELISM", "false")
+
+    training._configure_training_workers(4)
+
+    assert training.os.environ["RAYON_NUM_THREADS"] == "4"
+    assert training.os.environ["TOKENIZERS_PARALLELISM"] == "true"

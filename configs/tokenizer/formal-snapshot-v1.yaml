@@ -1,0 +1,7 @@
+schema_version: 1
+sample_ratio: 0.01
+split_dir: artifacts/data/formal-70g/split-v1
+audit_dir: artifacts/data/formal-70g/audit-v1
+output_dir: artifacts/tokenizer-snapshots/formal-70g-v4
+tokenizer_output_dir: artifacts/tokenizers/atom-tokenizer-formal-v4
+progress_interval_seconds: 60

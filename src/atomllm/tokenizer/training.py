@@ -15,6 +15,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+# Keep imports safe for callers that only inspect or evaluate tokenizer artifacts.
+# The training entry point configures this explicitly from --workers before BPE work.
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import tokenizers
 from tokenizers import AddedToken, Tokenizer
 from tokenizers.decoders import ByteLevel as ByteLevelDecoder
@@ -52,6 +56,17 @@ class TrainingInput:
     path: Path
     document_count: int
     sha256: str
+
+
+def _configure_training_workers(workers: int) -> None:
+    """Configure the Rayon pool before the tokenizer performs parallel work."""
+    maximum = os.cpu_count() or 1
+    if type(workers) is not int or not 1 <= workers <= maximum:
+        raise TokenizerTrainingError(
+            f"workers must be an integer between 1 and {maximum}"
+        )
+    os.environ["RAYON_NUM_THREADS"] = str(workers)
+    os.environ["TOKENIZERS_PARALLELISM"] = "false" if workers == 1 else "true"
 
 
 def _sha256(path: Path) -> str:
@@ -278,8 +293,11 @@ def _validate_existing_artifact(
 def train_tokenizer(
     config_path: str | Path,
     project_root: str | Path = ".",
+    *,
+    workers: int = 1,
 ) -> dict[str, Any]:
     """Train or idempotently verify one tokenizer artifact."""
+    _configure_training_workers(workers)
     root = Path(project_root).resolve()
     resolved_config_path = Path(config_path)
     if not resolved_config_path.is_absolute():
@@ -362,6 +380,8 @@ def train_tokenizer(
             "library_versions": {
                 "python": platform.python_version(),
                 "tokenizers": tokenizers.__version__,
+                "tokenizers_parallelism": os.environ["TOKENIZERS_PARALLELISM"],
+                "tokenizer_training_workers": workers,
             },
             "files": files,
         }
@@ -399,12 +419,21 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("configs/tokenizer/smoke-32k.yaml"),
     )
     parser.add_argument("--project-root", type=Path, default=Path("."))
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "Rayon worker threads used for BPE training (default: 1, low-memory). "
+            "Values above 1 can be faster but substantially increase peak memory."
+        ),
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    manifest = train_tokenizer(args.config, args.project_root)
+    manifest = train_tokenizer(args.config, args.project_root, workers=args.workers)
     print(
         "Tokenizer training complete: "
         f"{manifest['artifact_id']}, "
