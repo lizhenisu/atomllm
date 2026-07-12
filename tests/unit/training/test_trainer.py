@@ -186,6 +186,7 @@ def test_train_with_checkpoints_saves_boundaries_and_resumes(
         config_sha256=file_sha256(TRAINING_CONFIG_PATH),
     )
 
+    observed_steps = []
     result = train_with_checkpoints(
         trainer,
         target_steps=3,
@@ -193,9 +194,11 @@ def test_train_with_checkpoints_saves_boundaries_and_resumes(
         identity=identity,
         save_every_steps=2,
         keep_last=2,
+        on_step=lambda metric: observed_steps.append(metric.global_step),
     )
 
     assert result.trainer_state.global_step == 3
+    assert observed_steps == [1, 2, 3]
     assert [event.checkpoint_id for event in result.checkpoint_events] == [
         "step-000000002",
         "step-000000003",

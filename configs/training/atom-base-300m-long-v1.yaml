@@ -52,3 +52,8 @@ runtime:
   loss_chunk_size: 256
   compile_model: false
   deterministic: true
+monitoring:
+  enabled: true
+  tensorboard: true
+  log_every_steps: 1
+  flush_every_steps: 1

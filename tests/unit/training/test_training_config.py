@@ -26,6 +26,9 @@ def test_loads_bound_atom_5m_baseline() -> None:
     assert not config.data.formal_training_eligible
     assert config.checkpoint.exact_resume
     assert config.runtime.loss_chunk_size is None
+    assert config.monitoring.enabled
+    assert config.monitoring.tensorboard
+    assert config.monitoring.log_every_steps == 1
 
 
 def test_loads_explicit_one_variable_atom_5m_matrix() -> None:

@@ -7,7 +7,7 @@ import hashlib
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -488,6 +488,38 @@ class RuntimeConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class MonitoringConfig:
+    enabled: bool = True
+    tensorboard: bool = True
+    log_every_steps: int = 1
+    flush_every_steps: int = 1
+
+    @classmethod
+    def from_mapping(cls, value: Any) -> MonitoringConfig:
+        if value is None:
+            return cls()
+        data = _mapping(value, "monitoring")
+        _exact_keys(
+            data,
+            {"enabled", "tensorboard", "log_every_steps", "flush_every_steps"},
+            "monitoring",
+        )
+        for field_name in ("enabled", "tensorboard"):
+            if type(data[field_name]) is not bool:
+                raise TrainingConfigError(f"monitoring.{field_name} must be a boolean")
+        return cls(
+            enabled=data["enabled"],
+            tensorboard=data["tensorboard"],
+            log_every_steps=_positive_int(
+                data["log_every_steps"], "monitoring.log_every_steps"
+            ),
+            flush_every_steps=_positive_int(
+                data["flush_every_steps"], "monitoring.flush_every_steps"
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class TrainingConfig:
     schema_version: int
     name: str
@@ -501,28 +533,30 @@ class TrainingConfig:
     stability: StabilityConfig
     checkpoint: CheckpointConfig
     runtime: RuntimeConfig
+    monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
 
     @classmethod
     def from_mapping(cls, value: Any) -> TrainingConfig:
         data = _mapping(value, "training config")
-        _exact_keys(
-            data,
-            {
-                "schema_version",
-                "name",
-                "status",
-                "seed",
-                "model",
-                "data",
-                "batch",
-                "optimizer",
-                "scheduler",
-                "stability",
-                "checkpoint",
-                "runtime",
-            },
-            "training config",
-        )
+        required = {
+            "schema_version",
+            "name",
+            "status",
+            "seed",
+            "model",
+            "data",
+            "batch",
+            "optimizer",
+            "scheduler",
+            "stability",
+            "checkpoint",
+            "runtime",
+        }
+        optional = {"monitoring"}
+        unknown = set(data) - required - optional
+        missing = required - set(data)
+        if missing or unknown:
+            _exact_keys(data, required | (optional & set(data)), "training config")
         if (
             type(data["schema_version"]) is not int
             or data["schema_version"] != TRAINING_SCHEMA_VERSION
@@ -562,6 +596,7 @@ class TrainingConfig:
             stability=StabilityConfig.from_mapping(data["stability"]),
             checkpoint=checkpoint,
             runtime=RuntimeConfig.from_mapping(data["runtime"]),
+            monitoring=MonitoringConfig.from_mapping(data.get("monitoring")),
         )
 
 

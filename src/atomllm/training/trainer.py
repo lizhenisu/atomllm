@@ -12,7 +12,7 @@ from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import ContextManager
+from typing import Callable, ContextManager
 import tomllib
 
 import torch
@@ -200,7 +200,12 @@ class Trainer:
         self.elapsed_training_seconds = trainer_state.elapsed_training_seconds
         self._last_learning_rate = trainer_state.current_learning_rate
 
-    def train(self, steps: int) -> TrainingResult:
+    def train(
+        self,
+        steps: int,
+        *,
+        on_step: Callable[[StepMetrics], object] | None = None,
+    ) -> TrainingResult:
         if type(steps) is not int or steps <= 0:
             raise ValueError("steps must be a positive integer")
         if self.scheduler.completed_steps + steps > self.config.scheduler.total_steps:
@@ -260,17 +265,18 @@ class Trainer:
             )
             self.tokens_seen += self.config.batch.tokens_per_optimizer_step
             elapsed = time.perf_counter() - started
-            metrics.append(
-                StepMetrics(
-                    global_step=self.scheduler.completed_steps,
-                    loss=sum(losses) / len(losses),
-                    gradient_norm=gradient_norm,
-                    learning_rate=learning_rate,
-                    samples_seen=self.samples_seen,
-                    tokens_seen=self.tokens_seen,
-                    elapsed_seconds=elapsed,
-                )
+            metric = StepMetrics(
+                global_step=self.scheduler.completed_steps,
+                loss=sum(losses) / len(losses),
+                gradient_norm=gradient_norm,
+                learning_rate=learning_rate,
+                samples_seen=self.samples_seen,
+                tokens_seen=self.tokens_seen,
+                elapsed_seconds=elapsed,
             )
+            metrics.append(metric)
+            if on_step is not None:
+                on_step(metric)
 
         if self.device.type == "cuda":
             torch.cuda.synchronize(self.device)
@@ -418,6 +424,7 @@ def train_with_checkpoints(
     identity: object,
     save_every_steps: int,
     keep_last: int,
+    on_step: Callable[[StepMetrics], object] | None = None,
 ) -> ManagedTrainingResult:
     """Train to target_steps, saving exact-resume checkpoints on boundaries."""
     from atomllm.training.checkpoint import save_training_checkpoint
@@ -443,7 +450,7 @@ def train_with_checkpoints(
         next_boundary = ((current_step // save_every_steps) + 1) * save_every_steps
         segment_target = min(target_steps, next_boundary)
         segment_steps = segment_target - current_step
-        result = trainer.train(segment_steps)
+        result = trainer.train(segment_steps, on_step=on_step)
         metrics.extend(result.step_metrics)
         peak_allocated = max(peak_allocated, result.peak_allocated_gib)
         peak_reserved = max(peak_reserved, result.peak_reserved_gib)
@@ -634,14 +641,33 @@ def main(argv: list[str] | None = None) -> int:
         if args.checkpoint_every is not None
         else config.checkpoint.save_every_steps
     )
-    result = train_with_checkpoints(
-        trainer,
-        target_steps=steps,
-        checkpoints_dir=run.checkpoints_dir,
-        identity=checkpoint_identity,
-        save_every_steps=save_every_steps,
-        keep_last=config.checkpoint.keep_last,
-    )
+    from atomllm.training.monitoring import TrainingMonitor
+
+    monitor = None
+    if config.monitoring.enabled:
+        monitor = TrainingMonitor(
+            run.logs_dir,
+            total_steps=config.scheduler.total_steps,
+            tokens_per_step=config.batch.tokens_per_optimizer_step,
+            start_step=trainer.trainer_state().global_step,
+            prior_elapsed_seconds=trainer.elapsed_training_seconds,
+            log_every_steps=config.monitoring.log_every_steps,
+            flush_every_steps=config.monitoring.flush_every_steps,
+            tensorboard=config.monitoring.tensorboard,
+        )
+    try:
+        result = train_with_checkpoints(
+            trainer,
+            target_steps=steps,
+            checkpoints_dir=run.checkpoints_dir,
+            identity=checkpoint_identity,
+            save_every_steps=save_every_steps,
+            keep_last=config.checkpoint.keep_last,
+            on_step=None if monitor is None else monitor.record,
+        )
+    finally:
+        if monitor is not None:
+            monitor.close()
     if restored_manifest is not None:
         result = ManagedTrainingResult(
             trainer_state=result.trainer_state,
