@@ -424,21 +424,28 @@ class RuntimeConfig:
     gradient_checkpointing: bool
     compile_model: bool
     deterministic: bool
+    loss_chunk_size: int | None = None
+    checkpoint_segment_layers: int = 1
 
     @classmethod
     def from_mapping(cls, value: Any) -> RuntimeConfig:
         data = _mapping(value, "runtime")
-        _exact_keys(
-            data,
-            {
-                "device",
-                "precision",
-                "gradient_checkpointing",
-                "compile_model",
-                "deterministic",
-            },
-            "runtime",
-        )
+        required = {
+            "device",
+            "precision",
+            "gradient_checkpointing",
+            "compile_model",
+            "deterministic",
+        }
+        optional = {"loss_chunk_size", "checkpoint_segment_layers"}
+        unknown = set(data) - required - optional
+        missing = required - set(data)
+        if missing or unknown:
+            _exact_keys(
+                data,
+                required | (optional & set(data)),
+                "runtime",
+            )
         if not isinstance(data["device"], str) or data["device"] not in {
             "cpu",
             "cuda",
@@ -464,6 +471,19 @@ class RuntimeConfig:
             gradient_checkpointing=data["gradient_checkpointing"],
             compile_model=data["compile_model"],
             deterministic=data["deterministic"],
+            loss_chunk_size=(
+                None
+                if data.get("loss_chunk_size") is None
+                else _positive_int(data["loss_chunk_size"], "runtime.loss_chunk_size")
+            ),
+            checkpoint_segment_layers=(
+                1
+                if "checkpoint_segment_layers" not in data
+                else _positive_int(
+                    data["checkpoint_segment_layers"],
+                    "runtime.checkpoint_segment_layers",
+                )
+            ),
         )
 
 
@@ -726,12 +746,17 @@ def load_experiment_matrix(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Validate a stage-4 training baseline and experiment matrix."
+        description="Validate a stage-4 training baseline or experiment matrix."
     )
-    parser.add_argument(
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument(
+        "--config",
+        type=Path,
+        default=Path("configs/training/atom-50m-baseline.yaml"),
+    )
+    selection.add_argument(
         "--matrix",
         type=Path,
-        default=Path("configs/training/atom-5m-matrix.yaml"),
     )
     parser.add_argument("--project-root", type=Path, default=Path("."))
     return parser
@@ -739,10 +764,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    matrix, base = load_experiment_matrix(
-        args.matrix,
-        project_root=args.project_root,
-    )
+    if args.matrix is None:
+        base = load_training_config(args.config, project_root=args.project_root)
+        summary = {
+            "config": base.name,
+            "formal_training_eligible": base.data.formal_training_eligible,
+            "model": base.model.name,
+            "parameter_count": base.model.expected_parameter_count,
+            "total_steps": base.scheduler.total_steps,
+            "tokens_per_optimizer_step": base.batch.tokens_per_optimizer_step,
+        }
+        print(json.dumps(summary, sort_keys=True))
+        return 0
+    matrix, base = load_experiment_matrix(args.matrix, project_root=args.project_root)
     summary = {
         "base_config": base.name,
         "formal_training_eligible": base.data.formal_training_eligible,

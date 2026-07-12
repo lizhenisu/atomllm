@@ -1,0 +1,15 @@
+schema_version: 1
+name: atom-50m-fixed-batch-overfit-v1
+model_config: configs/model/atom-50m.yaml
+model_config_sha256: 95e3c1895504d43f6a88d402fc6609a7eb44c7769f9190806806e67bea4422c9
+training_data: artifacts/training-data/formal-token-shards-v2
+sequence_length: 256
+batch_size: 1
+steps: 100
+learning_rate: 0.001
+max_gradient_norm: 1.0
+seed: 42
+device: cuda
+precision: bf16
+maximum_final_to_initial_loss_ratio: 0.5
+output_dir: artifacts/reports/stage4-atom-50m-overfit-v1

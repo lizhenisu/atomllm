@@ -1,6 +1,6 @@
 schema_version: 1
-name: atom-base-300m-v1
-status: release
+name: atom-200m-context-probe
+status: smoke
 architecture: decoder_only_transformer
 tokenizer:
   version_id: tokenizer-version-atom-tokenizer-formal-v1-936e948b3509
@@ -14,11 +14,11 @@ tokenizer:
 dimensions:
   max_sequence_length: 8192
   num_layers: 24
-  hidden_size: 1024
-  num_attention_heads: 16
+  hidden_size: 768
+  num_attention_heads: 12
   num_key_value_heads: 4
   head_dim: 64
-  ffn_hidden_size: 2816
+  ffn_hidden_size: 2496
 components:
   normalization: rmsnorm
   rms_norm_epsilon: 1.0e-6
@@ -33,4 +33,4 @@ components:
   initializer_std: 0.02
   scale_residual_projections: true
   default_dtype: bfloat16
-expected_parameter_count: 303350784
+expected_parameter_count: 200381184

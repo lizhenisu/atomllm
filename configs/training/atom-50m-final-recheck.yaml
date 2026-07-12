@@ -1,0 +1,6 @@
+schema_version: 1
+name: atom-50m-stage4-final-recheck-v1
+search_plan: configs/training/atom-50m-experiment-plan.yaml
+run_id: stage4-atom50m-final-recheck
+training_runs_dir: artifacts/training-runs
+output_report: artifacts/reports/stage4-atom-50m-final-recheck-v1/report.json

@@ -98,6 +98,66 @@ def test_next_token_loss_matches_manual_cross_entropy() -> None:
     torch.testing.assert_close(output.loss, expected)
 
 
+def test_chunked_loss_matches_full_loss_and_gradients() -> None:
+    model = make_model().train()
+    input_ids = torch.randint(4, 512, (2, 11))
+
+    full = model(input_ids, labels=input_ids)
+    assert full.loss is not None
+    full.loss.backward()
+    full_gradients = {
+        name: parameter.grad.detach().clone()
+        for name, parameter in model.named_parameters()
+    }
+    model.zero_grad(set_to_none=True)
+
+    chunked = model(input_ids, labels=input_ids, loss_chunk_size=3)
+    assert chunked.logits is None
+    assert chunked.loss is not None
+    chunked.loss.backward()
+
+    torch.testing.assert_close(chunked.loss, full.loss, rtol=1e-6, atol=1e-7)
+    for name, parameter in model.named_parameters():
+        torch.testing.assert_close(
+            parameter.grad,
+            full_gradients[name],
+            rtol=2e-5,
+            atol=2e-6,
+        )
+
+
+def test_block_gradient_checkpointing_matches_regular_gradients() -> None:
+    model = make_model().train()
+    input_ids = torch.randint(4, 512, (2, 9))
+
+    regular = model(input_ids, labels=input_ids)
+    assert regular.loss is not None
+    regular.loss.backward()
+    regular_gradients = {
+        name: parameter.grad.detach().clone()
+        for name, parameter in model.named_parameters()
+    }
+    model.zero_grad(set_to_none=True)
+
+    checkpointed = model(
+        input_ids,
+        labels=input_ids,
+        gradient_checkpointing=True,
+        checkpoint_segment_layers=2,
+    )
+    assert checkpointed.loss is not None
+    checkpointed.loss.backward()
+
+    torch.testing.assert_close(checkpointed.loss, regular.loss, rtol=0, atol=0)
+    for name, parameter in model.named_parameters():
+        torch.testing.assert_close(
+            parameter.grad,
+            regular_gradients[name],
+            rtol=1e-5,
+            atol=1e-6,
+        )
+
+
 def test_loss_ignores_pad_and_attention_mask_targets() -> None:
     model = make_model()
     input_ids = torch.tensor([[2, 20, 0, 30, 31]])

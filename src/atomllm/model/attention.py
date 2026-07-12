@@ -238,20 +238,26 @@ class GroupedQueryAttention(nn.Module):
             key = torch.cat((past_key_value.key, key), dim=-2)
             value = torch.cat((past_key_value.value, value), dim=-2)
         next_cache = KVCache(key=key, value=value) if use_cache else None
-        allowed = self._attention_mask(
-            hidden_states.shape[0],
-            query_length,
-            past_length,
-            hidden_states.device,
-            attention_mask,
-        )
+        # The common pre-training path has no padding and no KV cache. Let
+        # SDPA express causality directly so CUDA can select a fused kernel and
+        # avoid materializing a [T, T] boolean mask for every block.
+        direct_causal = past_key_value is None and attention_mask is None
+        allowed = None
+        if not direct_causal:
+            allowed = self._attention_mask(
+                hidden_states.shape[0],
+                query_length,
+                past_length,
+                hidden_states.device,
+                attention_mask,
+            )
         attention_output = functional.scaled_dot_product_attention(
             query,
             key,
             value,
             attn_mask=allowed,
             dropout_p=self.attention_dropout if self.training else 0.0,
-            is_causal=False,
+            is_causal=direct_causal,
             enable_gqa=True,
         )
         attention_output = (

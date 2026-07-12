@@ -23,7 +23,12 @@ from atomllm.experiment import RunContext, create_run, set_seed
 from atomllm.model.config import load_model_config
 from atomllm.model.model import AtomLLM
 from atomllm.training.config import TrainingConfig, file_sha256, load_training_config
-from atomllm.training.data import PackedTokenDataset, ResumableBatchIterator
+from atomllm.training.data import (
+    PackedTokenDataset,
+    ResumableBatchIterator,
+    ResumableShardedBatchIterator,
+    ShardedTokenDataset,
+)
 from atomllm.training.scheduler import LearningRateScheduler
 from atomllm.training.state import DataState, TrainerState
 
@@ -117,10 +122,8 @@ class Trainer:
         self,
         model: AtomLLM,
         config: TrainingConfig,
-        data_iterator: ResumableBatchIterator,
+        data_iterator: ResumableBatchIterator | ResumableShardedBatchIterator,
     ) -> None:
-        if config.runtime.gradient_checkpointing:
-            raise TrainingError("gradient checkpointing is not implemented yet")
         if config.runtime.compile_model:
             raise TrainingError("compile_model is not implemented yet")
         if config.runtime.device == "cuda" and not torch.cuda.is_available():
@@ -221,7 +224,17 @@ class Trainer:
                     non_blocking=True,
                 )
                 with self._autocast():
-                    output = self.model(batch, labels=batch)
+                    output = self.model(
+                        batch,
+                        labels=batch,
+                        loss_chunk_size=self.config.runtime.loss_chunk_size,
+                        gradient_checkpointing=(
+                            self.config.runtime.gradient_checkpointing
+                        ),
+                        checkpoint_segment_layers=(
+                            self.config.runtime.checkpoint_segment_layers
+                        ),
+                    )
                     if output.loss is None:
                         raise TrainingError("model did not return a training loss")
                     loss = output.loss
@@ -473,17 +486,19 @@ def train_with_checkpoints(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the stage-4 Atom-5M baseline training loop."
+        description="Train an AtomLLM model from a versioned training configuration."
     )
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("configs/training/atom-5m-baseline.yaml"),
+        default=Path("configs/training/atom-50m-baseline.yaml"),
     )
     parser.add_argument(
+        "--training-data",
         "--packed-data",
+        dest="training_data",
         type=Path,
-        default=Path("artifacts/training-data/atom-5m-wikipedia-128-v1"),
+        default=Path("artifacts/training-data/formal-token-shards-v2"),
     )
     parser.add_argument(
         "--steps",
@@ -521,16 +536,30 @@ def main(argv: list[str] | None = None) -> int:
     root = args.project_root.resolve()
     config = load_training_config(args.config, project_root=root)
     model_config = load_model_config(root / config.model.config_path)
-    dataset = PackedTokenDataset(root / args.packed_data)
-    identity = dataset.manifest["identity"]
-    expected_identity = {
-        "data_version_id": config.data.data_version_id,
-        "input_sha256": config.data.split_sha256,
-        "tokenizer_version_id": config.data.tokenizer_version_id,
-        "tokenizer_sha256": config.data.tokenizer_sha256,
-        "sequence_length": config.batch.sequence_length,
-        "vocab_size": model_config.tokenizer.vocab_size,
-    }
+    data_directory = root / args.training_data
+    raw_manifest = json.loads((data_directory / "manifest.json").read_text())
+    if raw_manifest.get("format_version") == "document-bos-eos-sharded-v2":
+        dataset = ShardedTokenDataset(
+            data_directory,
+            sequence_length=config.batch.sequence_length,
+        )
+        identity = dataset.manifest["identity"]
+        expected_identity = {
+            "split_manifest_sha256": config.data.split_sha256,
+            "audit_manifest_sha256": config.data.data_manifest_sha256,
+            "tokenizer_sha256": config.data.tokenizer_sha256,
+        }
+    else:
+        dataset = PackedTokenDataset(data_directory)
+        identity = dataset.manifest["identity"]
+        expected_identity = {
+            "data_version_id": config.data.data_version_id,
+            "input_sha256": config.data.split_sha256,
+            "tokenizer_version_id": config.data.tokenizer_version_id,
+            "tokenizer_sha256": config.data.tokenizer_sha256,
+            "sequence_length": config.batch.sequence_length,
+            "vocab_size": model_config.tokenizer.vocab_size,
+        }
     mismatches = [
         key
         for key, expected_value in expected_identity.items()
@@ -548,11 +577,18 @@ def main(argv: list[str] | None = None) -> int:
 
     set_seed(config.seed)
     model = AtomLLM(model_config)
-    iterator = ResumableBatchIterator(
-        dataset,
-        batch_size=config.batch.micro_batch_size,
-        seed=config.seed,
-    )
+    if isinstance(dataset, ShardedTokenDataset):
+        iterator = ResumableShardedBatchIterator(
+            dataset,
+            batch_size=config.batch.micro_batch_size,
+            seed=config.seed,
+        )
+    else:
+        iterator = ResumableBatchIterator(
+            dataset,
+            batch_size=config.batch.micro_batch_size,
+            seed=config.seed,
+        )
     trainer = Trainer(model, config, iterator)
     steps = args.steps if args.steps is not None else config.scheduler.total_steps
 

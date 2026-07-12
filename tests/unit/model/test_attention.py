@@ -72,6 +72,19 @@ def test_causal_attention_does_not_leak_future_tokens() -> None:
     )
 
 
+def test_direct_causal_sdpa_matches_explicit_all_valid_mask() -> None:
+    attention = make_attention()
+    hidden_states = torch.randn(2, 7, 32)
+
+    direct, _ = attention(hidden_states)
+    explicit, _ = attention(
+        hidden_states,
+        attention_mask=torch.ones(2, 7, dtype=torch.bool),
+    )
+
+    torch.testing.assert_close(direct, explicit, rtol=1e-5, atol=1e-6)
+
+
 def test_padding_mask_blocks_masked_keys_and_zeros_masked_queries() -> None:
     attention = make_attention()
     original = torch.randn(1, 4, 32)

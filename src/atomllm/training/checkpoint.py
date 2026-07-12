@@ -515,7 +515,11 @@ def restore_training_checkpoint(
     )
     optimizer_state = torch.load(
         checkpoint_dir / "optimizer.pt",
-        map_location=trainer.device,
+        # Load on CPU first. Loading directly on CUDA temporarily holds both the
+        # deserialized tensors and the optimizer-owned copies on the GPU. For a
+        # 303M AdamW checkpoint that leaves enough reserved allocator cache to
+        # make a resumed step exceed the otherwise valid VRAM envelope.
+        map_location="cpu",
         weights_only=False,
     )
     scheduler_state = torch.load(
@@ -529,6 +533,12 @@ def restore_training_checkpoint(
         weights_only=False,
     )
     trainer.optimizer.load_state_dict(optimizer_state)
+    del optimizer_state
+    if trainer.device.type == "cuda":
+        # load_state_dict has already moved optimizer tensors to their parameter
+        # device. Release only now-unused cache from the temporary transfer so
+        # the resumed training peak measures the live training state.
+        torch.cuda.empty_cache()
     try:
         trainer.scheduler.load_state_dict(scheduler_state)
     except SchedulerError as error:

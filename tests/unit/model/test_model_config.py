@@ -10,6 +10,7 @@ from atomllm.model.config import (
 
 
 CONFIG_PATH = Path("configs/model/atom-base-300m.yaml")
+ATOM_50M_CONFIG_PATH = Path("configs/model/atom-50m.yaml")
 
 
 def write_modified_config(tmp_path: Path, old: str, new: str) -> Path:
@@ -42,6 +43,19 @@ def test_loads_committed_model_config_with_exact_parameter_count() -> None:
     assert breakdown.lm_head == 0
     assert breakdown.total == 303_350_784
     assert breakdown.total == config.expected_parameter_count
+
+
+def test_atom_50m_has_formal_tokenizer_and_exact_parameter_count() -> None:
+    config = load_model_config(ATOM_50M_CONFIG_PATH)
+    breakdown = calculate_parameter_count(config)
+
+    assert config.status == "release"
+    assert config.tokenizer.version_id == (
+        "tokenizer-version-atom-tokenizer-formal-v1-936e948b3509"
+    )
+    assert config.dimensions.num_layers == 12
+    assert config.dimensions.hidden_size == 512
+    assert breakdown.total == 50_213_376
 
 
 def test_rejects_hidden_size_head_mismatch(tmp_path: Path) -> None:

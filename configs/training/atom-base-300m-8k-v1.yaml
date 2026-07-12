@@ -1,0 +1,53 @@
+schema_version: 1
+name: atom-base-300m-8k-v1
+status: release
+seed: 42
+model:
+  config_path: configs/model/atom-base-300m.yaml
+  config_sha256: b9a516a041e1efda937d56c7d3f19a3b8f19e8c588c355171739ef196f084d76
+  name: atom-base-300m-v1
+  expected_parameter_count: 303350784
+data:
+  data_version_id: formal-70g-audit-v1
+  data_manifest_sha256: 6489228304dd55c1beab33cbabccda958792bb25601bd92d5cdab6a115312ba5
+  split: train
+  split_sha256: c93480d9e03ebaa7a30cbf68541064cca045f33441c19cb9ef2e545d2e12dd6d
+  tokenizer_version_id: tokenizer-version-atom-tokenizer-formal-v1-936e948b3509
+  tokenizer_sha256: 7a3c19c63048274642f7bf324b7ecd36899a7c01c1de9b4584bf41102fb4fa14
+  formal_training_eligible: true
+batch:
+  sequence_length: 8192
+  micro_batch_size: 1
+  gradient_accumulation_steps: 2
+optimizer:
+  name: adamw
+  learning_rate: 0.0002
+  beta1: 0.9
+  beta2: 0.95
+  epsilon: 1.0e-08
+  weight_decay: 0.0
+scheduler:
+  name: constant
+  warmup_steps: 12239
+  total_steps: 61036
+  minimum_learning_rate_ratio: 0.1
+stability:
+  max_gradient_norm: 0.5
+  reject_non_finite_loss: true
+  reject_non_finite_gradient_norm: true
+checkpoint:
+  save_every_steps: 4
+  keep_last: 3
+  exact_resume: true
+  model_format: safetensors
+  save_optimizer: true
+  save_scheduler: true
+  save_rng_state: true
+  save_data_state: true
+runtime:
+  device: cuda
+  precision: bf16
+  gradient_checkpointing: true
+  loss_chunk_size: 256
+  compile_model: false
+  deterministic: true

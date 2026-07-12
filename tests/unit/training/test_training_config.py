@@ -25,6 +25,7 @@ def test_loads_bound_atom_5m_baseline() -> None:
     assert config.batch.tokens_per_optimizer_step == 4_096
     assert not config.data.formal_training_eligible
     assert config.checkpoint.exact_resume
+    assert config.runtime.loss_chunk_size is None
 
 
 def test_loads_explicit_one_variable_atom_5m_matrix() -> None:

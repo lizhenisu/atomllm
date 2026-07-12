@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as functional
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 from atomllm.model.attention import KVCache
 from atomllm.model.block import TransformerBlock
@@ -19,7 +20,7 @@ ModelCache = tuple[KVCache, ...]
 
 @dataclass(frozen=True, slots=True)
 class CausalLMOutput:
-    logits: torch.Tensor
+    logits: torch.Tensor | None
     loss: torch.Tensor | None
     past_key_values: ModelCache | None
 
@@ -130,6 +131,86 @@ class AtomLLM(nn.Module):
             ignore_index=-100,
         )
 
+    def _effective_labels(
+        self,
+        labels: torch.Tensor,
+        attention_mask: torch.Tensor | None,
+        *,
+        device: torch.device,
+        sequence_length: int,
+    ) -> torch.Tensor:
+        if labels.ndim != 2 or labels.shape[1] != sequence_length:
+            raise ValueError("labels must have the same [batch, sequence] shape")
+        if labels.dtype != torch.int64:
+            raise TypeError("labels must use int64 dtype")
+        if labels.device != device:
+            raise ValueError("labels and hidden states must be on the same device")
+        if sequence_length < 2:
+            raise ValueError("at least two tokens are required to calculate loss")
+        ignored = labels == -100
+        in_vocabulary = (labels >= 0) & (labels < self.vocab_size)
+        if not torch.all(ignored | in_vocabulary).item():
+            raise ValueError(f"labels must be -100 or in [0, {self.vocab_size})")
+        effective = labels.clone()
+        effective[effective == self.pad_token_id] = -100
+        if attention_mask is not None:
+            if attention_mask.shape != labels.shape:
+                raise ValueError(
+                    "attention_mask must match labels when calculating loss"
+                )
+            effective.masked_fill_(
+                ~attention_mask.to(device=device, dtype=torch.bool),
+                -100,
+            )
+        if not torch.any(effective[:, 1:] != -100).item():
+            raise ValueError("loss has no valid next-token targets")
+        return effective
+
+    def _chunked_loss(
+        self,
+        hidden_states: torch.Tensor,
+        labels: torch.Tensor,
+        attention_mask: torch.Tensor | None,
+        chunk_size: int,
+    ) -> torch.Tensor:
+        if type(chunk_size) is not int or chunk_size <= 0:
+            raise ValueError("loss_chunk_size must be a positive integer")
+        effective = self._effective_labels(
+            labels,
+            attention_mask,
+            device=hidden_states.device,
+            sequence_length=hidden_states.shape[1],
+        )
+        shifted_hidden = hidden_states[:, :-1]
+        shifted_labels = effective[:, 1:]
+        valid_count = (shifted_labels != -100).sum()
+        loss_sum = hidden_states.new_zeros((), dtype=torch.float32)
+
+        def chunk_loss(states: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+            logits = functional.linear(states, self.lm_head.weight).float()
+            return functional.cross_entropy(
+                logits.reshape(-1, self.vocab_size),
+                targets.reshape(-1),
+                ignore_index=-100,
+                reduction="sum",
+            )
+
+        for start in range(0, shifted_hidden.shape[1], chunk_size):
+            states = shifted_hidden[:, start : start + chunk_size]
+            targets = shifted_labels[:, start : start + chunk_size]
+            if self.training and torch.is_grad_enabled():
+                partial = checkpoint(
+                    chunk_loss,
+                    states,
+                    targets,
+                    use_reentrant=False,
+                    preserve_rng_state=False,
+                )
+            else:
+                partial = chunk_loss(states, targets)
+            loss_sum = loss_sum + partial
+        return loss_sum / valid_count
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -138,33 +219,97 @@ class AtomLLM(nn.Module):
         labels: torch.Tensor | None = None,
         past_key_values: ModelCache | None = None,
         use_cache: bool = False,
+        loss_chunk_size: int | None = None,
+        gradient_checkpointing: bool = False,
+        checkpoint_segment_layers: int = 1,
     ) -> CausalLMOutput:
         self._validate_input_ids(input_ids)
         if labels is not None and past_key_values is not None:
             raise ValueError("labels with past_key_values are not supported")
+        if gradient_checkpointing and (not self.training or use_cache):
+            raise ValueError(
+                "gradient checkpointing requires training mode without KV cache"
+            )
+        if type(checkpoint_segment_layers) is not int or checkpoint_segment_layers <= 0:
+            raise ValueError("checkpoint_segment_layers must be a positive integer")
         layer_caches = self._validate_cache(past_key_values)
         hidden_states = self.token_embeddings(input_ids)
         next_caches: list[KVCache] = []
-        for layer, layer_cache in zip(
-            self.layers,
-            layer_caches,
-            strict=True,
-        ):
-            hidden_states, next_cache = layer(
-                hidden_states,
-                attention_mask=attention_mask,
-                past_key_value=layer_cache,
-                use_cache=use_cache,
-            )
-            if use_cache:
-                if next_cache is None:
-                    raise RuntimeError("layer did not return a requested KV cache")
-                next_caches.append(next_cache)
+        if gradient_checkpointing:
+            for start in range(0, self.num_layers, checkpoint_segment_layers):
+                segment = tuple(self.layers[start : start + checkpoint_segment_layers])
+
+                def segment_forward(
+                    states: torch.Tensor,
+                    current_segment: tuple[TransformerBlock, ...] = segment,
+                ) -> torch.Tensor:
+                    for current_layer in current_segment:
+                        if len(current_segment) == 1:
+                            states = current_layer(
+                                states,
+                                attention_mask=attention_mask,
+                                past_key_value=None,
+                                use_cache=False,
+                            )[0]
+                        else:
+
+                            def layer_forward(
+                                layer_states: torch.Tensor,
+                                layer: TransformerBlock = current_layer,
+                            ) -> torch.Tensor:
+                                return layer(
+                                    layer_states,
+                                    attention_mask=attention_mask,
+                                    past_key_value=None,
+                                    use_cache=False,
+                                )[0]
+
+                            states = checkpoint(
+                                layer_forward,
+                                states,
+                                use_reentrant=False,
+                                preserve_rng_state=True,
+                            )
+                    return states
+
+                hidden_states = checkpoint(
+                    segment_forward,
+                    hidden_states,
+                    use_reentrant=False,
+                    preserve_rng_state=True,
+                )
+        else:
+            for layer, layer_cache in zip(
+                self.layers,
+                layer_caches,
+                strict=True,
+            ):
+                hidden_states, next_cache = layer(
+                    hidden_states,
+                    attention_mask=attention_mask,
+                    past_key_value=layer_cache,
+                    use_cache=use_cache,
+                )
+                if use_cache:
+                    if next_cache is None:
+                        raise RuntimeError("layer did not return a requested KV cache")
+                    next_caches.append(next_cache)
         hidden_states = self.final_norm(hidden_states)
-        logits = self.lm_head(hidden_states)
-        loss = (
-            self._loss(logits, labels, attention_mask) if labels is not None else None
-        )
+        if labels is not None and loss_chunk_size is not None:
+            logits = None
+            loss = self._chunked_loss(
+                hidden_states,
+                labels,
+                attention_mask,
+                loss_chunk_size,
+            )
+        else:
+            logits = self.lm_head(hidden_states)
+            loss = (
+                self._loss(logits, labels, attention_mask)
+                if labels is not None
+                else None
+            )
         return CausalLMOutput(
             logits=logits,
             loss=loss,

@@ -1,0 +1,63 @@
+schema_version: 1
+name: atom-50m-stage4-sequential-search-v2
+base_config: configs/training/atom-50m-baseline.yaml
+training_data: artifacts/training-data/formal-token-shards-v2
+validation_data: artifacts/training-data/formal-validation-token-shards-v2
+train_token_budget_per_trial: 1572864
+validation_batches: 64
+validation_batch_size: 1
+validation_seed: 4242
+final_recheck_token_budget: 6291456
+early_stop_check_interval_steps: 5
+early_stop_minimum_steps: 10
+early_stop_loss_ratio: 1.5
+output_dir: artifacts/reports/stage4-atom-50m-search-v2
+stages:
+  - name: learning-rate
+    variable: learning_rate
+    candidates:
+      - name: low
+        value: 0.0003
+      - name: baseline
+        value: 0.0006
+      - name: high
+        value: 0.001
+  - name: tokens-per-step
+    variable: gradient_accumulation_steps
+    candidates:
+      - name: 16384-tokens
+        value: 4
+      - name: 32768-tokens
+        value: 8
+      - name: 49152-tokens
+        value: 12
+  - name: warmup
+    variable: warmup_ratio
+    candidates:
+      - name: short
+        value: 0.03
+      - name: baseline
+        value: 0.1
+      - name: long
+        value: 0.2
+  - name: weight-decay
+    variable: weight_decay
+    candidates:
+      - name: disabled
+        value: 0.0
+      - name: baseline
+        value: 0.1
+  - name: gradient-clip
+    variable: max_gradient_norm
+    candidates:
+      - name: conservative
+        value: 0.5
+      - name: baseline
+        value: 1.0
+  - name: scheduler
+    variable: scheduler
+    candidates:
+      - name: cosine
+        value: cosine
+      - name: constant
+        value: constant

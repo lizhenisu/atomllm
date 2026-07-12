@@ -1,0 +1,12 @@
+schema_version: 1
+name: atom-base-300m-long-context-audit-v1
+formal_config: configs/training/atom-base-300m-long-v1.yaml
+smoke_config: configs/training/atom-base-300m-long-smoke.yaml
+training_data: artifacts/training-data/formal-token-shards-v2
+run_id: atom-base-300m-grouped-40k-recovery-v1
+baseline_run_id: atom-base-300m-long-recovery-v2
+baseline_sequence_length: 27136
+training_runs_dir: artifacts/training-runs
+expected_sequence_length: 40960
+maximum_peak_allocated_gib: 7.99560546875
+output_report: artifacts/reports/atom-base-300m-long-context-audit-v1/report.json

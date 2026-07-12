@@ -1,0 +1,16 @@
+schema_version: 1
+name: atom-formal-validation-token-shards-v2
+input_split: validation
+split_dir: artifacts/data/formal-70g/split-v1
+split_manifest_sha256: c93480d9e03ebaa7a30cbf68541064cca045f33441c19cb9ef2e545d2e12dd6d
+audit_manifest: artifacts/data/formal-70g/audit-v1/manifest.json
+audit_manifest_sha256: 6489228304dd55c1beab33cbabccda958792bb25601bd92d5cdab6a115312ba5
+tokenizer_version_manifest: artifacts/tokenizer-versions/atom-tokenizer-formal-v1/manifest.json
+tokenizer_version_manifest_sha256: 71aea39613d14269033fd64c94d8f0ac1f7aa376ca25191c698b34ea00244b88
+tokenizer_path: artifacts/tokenizers/atom-tokenizer-formal-v4/tokenizer.json
+tokenizer_sha256: 7a3c19c63048274642f7bf324b7ecd36899a7c01c1de9b4584bf41102fb4fa14
+output_dir: artifacts/training-data/formal-validation-token-shards-v2
+token_dtype: uint16-le
+max_rss_gib: 9.0
+progress_interval_seconds: 30
+workers: 3
