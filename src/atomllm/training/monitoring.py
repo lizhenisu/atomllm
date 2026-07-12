@@ -64,7 +64,7 @@ class TrainingMonitor:
         self.last_step = start_step
         self._events_since_flush = 0
         self._jsonl: TextIO = (self.log_dir / "progress.jsonl").open(
-            "a", encoding="utf-8", buffering=1
+            "a", encoding="utf-8"
         )
         self._writer = (
             SummaryWriter(log_dir=str(self.log_dir / "tensorboard"))

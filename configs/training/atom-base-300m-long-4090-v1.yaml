@@ -1,0 +1,74 @@
+schema_version: 1
+name: atom-base-300m-long-4090-v1
+status: release
+seed: 42
+model:
+  config_path: configs/model/atom-base-300m-long-v1.yaml
+  config_sha256: 180b4bb175d1ecc2a231874c3a1897f9712660da02560b9b5d277abf76419f85
+  name: atom-base-300m-long-v1
+  expected_parameter_count: 303350784
+data:
+  data_version_id: formal-70g-audit-v1
+  data_manifest_sha256: 6489228304dd55c1beab33cbabccda958792bb25601bd92d5cdab6a115312ba5
+  split: train
+  split_sha256: c93480d9e03ebaa7a30cbf68541064cca045f33441c19cb9ef2e545d2e12dd6d
+  tokenizer_version_id: tokenizer-version-atom-tokenizer-formal-v1-936e948b3509
+  tokenizer_sha256: 7a3c19c63048274642f7bf324b7ecd36899a7c01c1de9b4584bf41102fb4fa14
+  formal_training_eligible: true
+batch:
+  # 最大的速度杠杆。降低到8192或16384会显著加速，但不再是全程40K训练；
+  # 修改后还必须重新计算每步Token数、total_steps和warmup_steps。
+  sequence_length: 40960
+  # 24GB显存有余量时可尝试2；这会使每步Token数翻倍，不能直接沿用当前训练步数。
+  micro_batch_size: 1
+  gradient_accumulation_steps: 1
+optimizer:
+  name: adamw
+  learning_rate: 0.0002
+  beta1: 0.9
+  beta2: 0.95
+  epsilon: 1.0e-08
+  weight_decay: 0.0
+scheduler:
+  name: constant
+  warmup_steps: 4896
+  total_steps: 24416
+  minimum_learning_rate_ratio: 0.1
+stability:
+  max_gradient_norm: 0.5
+  reject_non_finite_loss: true
+  reject_non_finite_gradient_norm: true
+checkpoint:
+  # Checkpoint写盘造成明显停顿时可提高到32或64；间隔越大，异常中断时重算越多。
+  # 该值必须整除scheduler.total_steps。
+  save_every_steps: 16
+  keep_last: 3
+  exact_resume: true
+  model_format: safetensors
+  save_optimizer: true
+  save_scheduler: true
+  save_rng_state: true
+  save_data_state: true
+runtime:
+  device: cuda
+  precision: bf16
+  # 当前采用速度和显存更平衡的逐层Checkpoint。若实测Peak Allocated远低于24GB，
+  # 可尝试设为false以消除激活重计算；40K下可能直接OOM，必须先用1~2 Step探测。
+  gradient_checkpointing: true
+  # 设为1表示只逐层重算，比4060使用的层级式4层分组更快。
+  # 显存紧张时才增大到2或4；更大的值会增加嵌套重计算开销。
+  checkpoint_segment_layers: 1
+  # 显存充足时可依次尝试4096和8192，减少LM Head/Cross Entropy分块循环；
+  # 数值越大峰值显存越高，完整40960不建议直接使用。
+  loss_chunk_size: 2048
+  # 当前训练器尚未实现torch.compile，必须保持false。
+  compile_model: false
+  # 改为false可能提高部分算子吞吐，但会放弃严格可复现性；正式训练默认保留true。
+  deterministic: true
+monitoring:
+  enabled: true
+  tensorboard: true
+  log_every_steps: 1
+  # 若TensorBoard和JSONL刷新影响吞吐，可提高到10；异常退出时最多丢失尚未Flush的监控记录，
+  # 不影响模型Checkpoint和训练恢复。
+  flush_every_steps: 1
