@@ -16,6 +16,7 @@ from typing import Callable, ContextManager
 import tomllib
 
 import torch
+from torch.nn.parallel import DistributedDataParallel
 import yaml
 
 from atomllm.config import ProjectConfig
@@ -29,6 +30,7 @@ from atomllm.training.data import (
     ResumableShardedBatchIterator,
     ShardedTokenDataset,
 )
+from atomllm.training.distributed import DistributedContext
 from atomllm.training.scheduler import LearningRateScheduler
 from atomllm.training.state import DataState, TrainerState
 
@@ -123,6 +125,7 @@ class Trainer:
         model: AtomLLM,
         config: TrainingConfig,
         data_iterator: ResumableBatchIterator | ResumableShardedBatchIterator,
+        distributed: DistributedContext | None = None,
     ) -> None:
         if config.runtime.compile_model:
             raise TrainingError("compile_model is not implemented yet")
@@ -134,8 +137,30 @@ class Trainer:
             raise TrainingError("packed sequence length does not match config")
 
         self.config = config
-        self.device = torch.device(config.runtime.device)
+        self.distributed = distributed or DistributedContext()
+        if config.distributed.enabled != self.distributed.enabled:
+            raise TrainingError("distributed context does not match training config")
+        if data_iterator.rank != self.distributed.rank:
+            raise TrainingError("data iterator rank does not match distributed context")
+        if data_iterator.world_size != self.distributed.world_size:
+            raise TrainingError(
+                "data iterator world_size does not match distributed context"
+            )
+        self.device = self.distributed.device(config.runtime.device)
         self.model = model.to(device=self.device, dtype=torch.float32)
+        if self.distributed.is_distributed:
+            ddp_options: dict[str, object] = {"broadcast_buffers": False}
+            if self.device.type == "cuda":
+                ddp_options.update(
+                    device_ids=[self.distributed.local_rank],
+                    output_device=self.distributed.local_rank,
+                )
+            self.training_model: torch.nn.Module = DistributedDataParallel(
+                self.model,
+                **ddp_options,
+            )
+        else:
+            self.training_model = self.model
         self.data_iterator = data_iterator
         self.optimizer = build_adamw_optimizer(self.model, config)
         self.scheduler = LearningRateScheduler(
@@ -182,9 +207,12 @@ class Trainer:
             trainer_state.global_step
             * self.config.batch.micro_batch_size
             * self.config.batch.gradient_accumulation_steps
+            * self.distributed.world_size
         )
         expected_tokens = (
-            trainer_state.global_step * self.config.batch.tokens_per_optimizer_step
+            trainer_state.global_step
+            * self.config.batch.tokens_per_optimizer_step
+            * self.distributed.world_size
         )
         if trainer_state.samples_seen != expected_samples:
             raise TrainingError("trainer samples_seen is incompatible with config")
@@ -223,31 +251,43 @@ class Trainer:
             learning_rate = self.scheduler.prepare_step()
             self.optimizer.zero_grad(set_to_none=True)
             losses: list[float] = []
-            for _ in range(self.config.batch.gradient_accumulation_steps):
+            for micro_step in range(self.config.batch.gradient_accumulation_steps):
                 batch = self.data_iterator.next_batch().to(
                     self.device,
                     non_blocking=True,
                 )
                 with self._autocast():
-                    output = self.model(
-                        batch,
-                        labels=batch,
-                        loss_chunk_size=self.config.runtime.loss_chunk_size,
-                        gradient_checkpointing=(
-                            self.config.runtime.gradient_checkpointing
-                        ),
-                        checkpoint_segment_layers=(
-                            self.config.runtime.checkpoint_segment_layers
-                        ),
+                    sync_gradients = (
+                        micro_step == self.config.batch.gradient_accumulation_steps - 1
                     )
-                    if output.loss is None:
-                        raise TrainingError("model did not return a training loss")
-                    loss = output.loss
+                    sync_context = (
+                        nullcontext()
+                        if sync_gradients
+                        or not isinstance(self.training_model, DistributedDataParallel)
+                        else self.training_model.no_sync()
+                    )
+                    with sync_context:
+                        output = self.training_model(
+                            batch,
+                            labels=batch,
+                            loss_chunk_size=self.config.runtime.loss_chunk_size,
+                            gradient_checkpointing=(
+                                self.config.runtime.gradient_checkpointing
+                            ),
+                            checkpoint_segment_layers=(
+                                self.config.runtime.checkpoint_segment_layers
+                            ),
+                        )
+                        if output.loss is None:
+                            raise TrainingError("model did not return a training loss")
+                        loss = output.loss
+                        (
+                            loss / self.config.batch.gradient_accumulation_steps
+                        ).backward()
                 loss_value = float(loss.detach())
                 if not math.isfinite(loss_value):
                     raise TrainingError("training loss is not finite")
                 losses.append(loss_value)
-                (loss / self.config.batch.gradient_accumulation_steps).backward()
 
             gradient_norm_tensor = torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(),
@@ -262,12 +302,19 @@ class Trainer:
             self.samples_seen += (
                 self.config.batch.micro_batch_size
                 * self.config.batch.gradient_accumulation_steps
+                * self.distributed.world_size
             )
-            self.tokens_seen += self.config.batch.tokens_per_optimizer_step
+            self.tokens_seen += (
+                self.config.batch.tokens_per_optimizer_step
+                * self.distributed.world_size
+            )
             elapsed = time.perf_counter() - started
             metric = StepMetrics(
                 global_step=self.scheduler.completed_steps,
-                loss=sum(losses) / len(losses),
+                loss=self.distributed.mean(
+                    sum(losses) / len(losses),
+                    device=self.device,
+                ),
                 gradient_norm=gradient_norm,
                 learning_rate=learning_rate,
                 samples_seen=self.samples_seen,
@@ -455,7 +502,9 @@ def train_with_checkpoints(
         peak_allocated = max(peak_allocated, result.peak_allocated_gib)
         peak_reserved = max(peak_reserved, result.peak_reserved_gib)
         processed_tokens += (
-            segment_steps * trainer.config.batch.tokens_per_optimizer_step
+            segment_steps
+            * trainer.config.batch.tokens_per_optimizer_step
+            * trainer.distributed.world_size
         )
         current_step = result.trainer_state.global_step
         if current_step % save_every_steps == 0 or current_step == target_steps:
@@ -536,19 +585,71 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def load_sharded_training_dataset(
+    data_directory: Path,
+    *,
+    sequence_length: int,
+    distributed: DistributedContext,
+) -> ShardedTokenDataset:
+    """Verify shared token shards once on rank 0, then broadcast the result."""
+    if not distributed.is_distributed:
+        return ShardedTokenDataset(
+            data_directory,
+            sequence_length=sequence_length,
+        )
+
+    dataset = None
+    outcome = None
+    if distributed.is_main_process:
+        try:
+            dataset = ShardedTokenDataset(
+                data_directory,
+                sequence_length=sequence_length,
+            )
+            outcome = {
+                "ok": True,
+                "manifest": dataset.manifest,
+                "manifest_sha256": dataset.manifest_sha256,
+            }
+        except BaseException as error:
+            outcome = {
+                "ok": False,
+                "error": f"{type(error).__name__}: {error}",
+            }
+    outcome = distributed.broadcast_object(outcome)
+    if not outcome["ok"]:
+        raise TrainingError(
+            f"rank 0 token-shard verification failed: {outcome['error']}"
+        )
+    if dataset is not None:
+        return dataset
+    return ShardedTokenDataset(
+        data_directory,
+        sequence_length=sequence_length,
+        verified_manifest=outcome["manifest"],
+        manifest_sha256=outcome["manifest_sha256"],
+    )
+
+
+def _run_main(
+    argv: list[str] | None,
+    distributed: DistributedContext,
+) -> int:
     args = build_parser().parse_args(argv)
     if args.checkpoint_id is not None and not args.resume:
         raise TrainingError("--checkpoint-id requires --resume")
+    if distributed.is_distributed and args.run_id is None:
+        raise TrainingError("distributed training requires --run-id")
     root = args.project_root.resolve()
     config = load_training_config(args.config, project_root=root)
     model_config = load_model_config(root / config.model.config_path)
     data_directory = root / args.training_data
     raw_manifest = json.loads((data_directory / "manifest.json").read_text())
     if raw_manifest.get("format_version") == "document-bos-eos-sharded-v2":
-        dataset = ShardedTokenDataset(
+        dataset = load_sharded_training_dataset(
             data_directory,
             sequence_length=config.batch.sequence_length,
+            distributed=distributed,
         )
         identity = dataset.manifest["identity"]
         expected_identity = {
@@ -582,21 +683,25 @@ def main(argv: list[str] | None = None) -> int:
     ):
         raise TrainingError("packed-data training eligibility does not match config")
 
-    set_seed(config.seed)
+    set_seed(config.seed + distributed.rank)
     model = AtomLLM(model_config)
     if isinstance(dataset, ShardedTokenDataset):
         iterator = ResumableShardedBatchIterator(
             dataset,
             batch_size=config.batch.micro_batch_size,
             seed=config.seed,
+            rank=distributed.rank,
+            world_size=distributed.world_size,
         )
     else:
         iterator = ResumableBatchIterator(
             dataset,
             batch_size=config.batch.micro_batch_size,
             seed=config.seed,
+            rank=distributed.rank,
+            world_size=distributed.world_size,
         )
-    trainer = Trainer(model, config, iterator)
+    trainer = Trainer(model, config, iterator, distributed)
     steps = args.steps if args.steps is not None else config.scheduler.total_steps
 
     project_config = ProjectConfig(
@@ -606,13 +711,19 @@ def main(argv: list[str] | None = None) -> int:
         precision=config.runtime.precision,
         output_dir=args.output_dir,
     )
-    run = create_or_open_run(
-        project_config,
-        run_id=args.run_id,
-        resume=args.resume,
-    )
-    if not args.resume:
+    if distributed.is_main_process:
+        run = create_or_open_run(
+            project_config,
+            run_id=args.run_id,
+            resume=args.resume,
+        )
+    distributed.barrier()
+    if not distributed.is_main_process:
+        assert args.run_id is not None
+        run = _open_existing_run(project_config.output_dir, args.run_id)
+    if not args.resume and distributed.is_main_process:
         shutil.copy2(args.config, run.run_dir / "training-config.yaml")
+    distributed.barrier()
 
     from atomllm.training.checkpoint import (
         CheckpointIdentity,
@@ -644,11 +755,13 @@ def main(argv: list[str] | None = None) -> int:
     from atomllm.training.monitoring import TrainingMonitor
 
     monitor = None
-    if config.monitoring.enabled:
+    if config.monitoring.enabled and distributed.is_main_process:
         monitor = TrainingMonitor(
             run.logs_dir,
             total_steps=config.scheduler.total_steps,
-            tokens_per_step=config.batch.tokens_per_optimizer_step,
+            tokens_per_step=(
+                config.batch.tokens_per_optimizer_step * distributed.world_size
+            ),
             start_step=trainer.trainer_state().global_step,
             prior_elapsed_seconds=trainer.elapsed_training_seconds,
             log_every_steps=config.monitoring.log_every_steps,
@@ -681,12 +794,25 @@ def main(argv: list[str] | None = None) -> int:
             tokens_per_second=result.tokens_per_second,
         )
 
-    report_path = (
-        run.reports_dir / f"training-report-{datetime.now():%Y%m%d-%H%M%S}.json"
+    if not distributed.is_main_process:
+        return 0
+    report_path = run.reports_dir / (
+        f"training-report-{datetime.now():%Y%m%d-%H%M%S}.json"
     )
+    report = asdict(result)
+    report["distributed"] = {
+        "world_size": distributed.world_size,
+        "global_batch_size": (
+            config.batch.micro_batch_size
+            * config.batch.gradient_accumulation_steps
+            * distributed.world_size
+        ),
+        "tokens_per_optimizer_step": (
+            config.batch.tokens_per_optimizer_step * distributed.world_size
+        ),
+    }
     report_path.write_text(
-        json.dumps(asdict(result), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     summary = {
         "checkpoint_events": [asdict(event) for event in result.checkpoint_events],
@@ -702,9 +828,21 @@ def main(argv: list[str] | None = None) -> int:
         "samples_seen": result.trainer_state.samples_seen,
         "tokens_per_second": result.tokens_per_second,
         "tokens_seen": result.trainer_state.tokens_seen,
+        "world_size": distributed.world_size,
     }
     print(json.dumps(summary, sort_keys=True))
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    root = args.project_root.resolve()
+    config = load_training_config(args.config, project_root=root)
+    distributed = DistributedContext.initialize(config.distributed)
+    try:
+        return _run_main(argv, distributed)
+    finally:
+        distributed.close()
 
 
 if __name__ == "__main__":

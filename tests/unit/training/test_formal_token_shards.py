@@ -1,7 +1,9 @@
+import hashlib
 import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 import yaml
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
@@ -9,9 +11,11 @@ from tokenizers.pre_tokenizers import Whitespace
 
 from atomllm.data.schema import CanonicalDocument, make_document_id
 from atomllm.training.config import file_sha256
+import atomllm.training.data as data_module
 from atomllm.training.data import (
     ResumableShardedBatchIterator,
     ShardedTokenDataset,
+    TrainingDataError,
 )
 from atomllm.training.formal_token_shards import (
     build_formal_token_shards,
@@ -165,6 +169,45 @@ def test_sharded_cursor_is_deterministic_across_resume_and_epoch(
     assert np.array_equal(resumed.next_batch().numpy(), expected_next.numpy())
     assert np.array_equal(resumed.next_batch().numpy(), expected_next_epoch.numpy())
     assert first.shape == (2, 4)
+
+
+def test_verified_manifest_skips_rehashing_shard_contents(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = _prepare_formal_fixture(tmp_path)
+    manifest = build_formal_token_shards(config_path.name, project_root=tmp_path)
+    output_dir = tmp_path / "output"
+    manifest_sha256 = hashlib.sha256(
+        (output_dir / "manifest.json").read_bytes()
+    ).hexdigest()
+
+    def unexpected_verification(directory: Path) -> dict:
+        raise AssertionError(f"unexpected full verification: {directory}")
+
+    monkeypatch.setattr(
+        data_module,
+        "verify_formal_token_shards",
+        unexpected_verification,
+    )
+    dataset = ShardedTokenDataset(
+        output_dir,
+        sequence_length=4,
+        verified_manifest=manifest,
+        manifest_sha256=manifest_sha256,
+    )
+
+    assert len(dataset) == 4
+    assert dataset.manifest_sha256 == manifest_sha256
+
+    (output_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+    with pytest.raises(TrainingDataError, match="does not match"):
+        ShardedTokenDataset(
+            output_dir,
+            sequence_length=4,
+            verified_manifest=manifest,
+            manifest_sha256=manifest_sha256,
+        )
 
 
 def test_train_is_default_and_validation_can_be_selected(tmp_path: Path) -> None:

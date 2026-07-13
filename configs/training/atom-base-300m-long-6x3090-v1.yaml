@@ -1,0 +1,68 @@
+schema_version: 1
+name: atom-base-300m-long-6x3090-v1
+status: release
+seed: 42
+model:
+  config_path: configs/model/atom-base-300m-long-v1.yaml
+  config_sha256: 180b4bb175d1ecc2a231874c3a1897f9712660da02560b9b5d277abf76419f85
+  name: atom-base-300m-long-v1
+  expected_parameter_count: 303350784
+data:
+  data_version_id: formal-70g-audit-v1
+  data_manifest_sha256: 6489228304dd55c1beab33cbabccda958792bb25601bd92d5cdab6a115312ba5
+  split: train
+  split_sha256: c93480d9e03ebaa7a30cbf68541064cca045f33441c19cb9ef2e545d2e12dd6d
+  tokenizer_version_id: tokenizer-version-atom-tokenizer-formal-v1-936e948b3509
+  tokenizer_sha256: 7a3c19c63048274642f7bf324b7ecd36899a7c01c1de9b4584bf41102fb4fa14
+  formal_training_eligible: true
+batch:
+  sequence_length: 40960
+  micro_batch_size: 1
+  gradient_accumulation_steps: 1
+optimizer:
+  name: adamw
+  learning_rate: 0.0002
+  beta1: 0.9
+  beta2: 0.95
+  epsilon: 1.0e-08
+  weight_decay: 0.0
+scheduler:
+  name: constant
+  # Keep the original ~200M-token warmup, then hold the peak LR for one
+  # deterministic pass over all complete global batches in the formal corpus.
+  warmup_steps: 816
+  # 371,195 complete 40,960-token samples // 6 ranks = 61,865 global steps.
+  # Five trailing samples cannot form a complete six-rank optimizer step.
+  total_steps: 61865
+  minimum_learning_rate_ratio: 0.1
+stability:
+  max_gradient_norm: 0.5
+  reject_non_finite_loss: true
+  reject_non_finite_gradient_norm: true
+checkpoint:
+  # The trainer always saves the final target step even when it is not divisible
+  # by this interval.
+  save_every_steps: 50
+  keep_last: 3
+  exact_resume: true
+  model_format: safetensors
+  save_optimizer: true
+  save_scheduler: true
+  save_rng_state: true
+  save_data_state: true
+runtime:
+  device: cuda
+  precision: bf16
+  gradient_checkpointing: true
+  checkpoint_segment_layers: 1
+  loss_chunk_size: 2048
+  compile_model: false
+  deterministic: true
+monitoring:
+  enabled: true
+  tensorboard: true
+  log_every_steps: 1
+  flush_every_steps: 1
+distributed:
+  enabled: true
+  backend: nccl

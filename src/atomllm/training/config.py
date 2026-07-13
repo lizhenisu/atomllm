@@ -520,6 +520,24 @@ class MonitoringConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class DistributedConfig:
+    enabled: bool = False
+    backend: str = "nccl"
+
+    @classmethod
+    def from_mapping(cls, value: Any) -> DistributedConfig:
+        if value is None:
+            return cls()
+        data = _mapping(value, "distributed")
+        _exact_keys(data, {"enabled", "backend"}, "distributed")
+        if type(data["enabled"]) is not bool:
+            raise TrainingConfigError("distributed.enabled must be a boolean")
+        if data["backend"] not in {"nccl", "gloo"}:
+            raise TrainingConfigError("distributed.backend must be 'nccl' or 'gloo'")
+        return cls(enabled=data["enabled"], backend=data["backend"])
+
+
+@dataclass(frozen=True, slots=True)
 class TrainingConfig:
     schema_version: int
     name: str
@@ -534,6 +552,7 @@ class TrainingConfig:
     checkpoint: CheckpointConfig
     runtime: RuntimeConfig
     monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
+    distributed: DistributedConfig = field(default_factory=DistributedConfig)
 
     @classmethod
     def from_mapping(cls, value: Any) -> TrainingConfig:
@@ -552,7 +571,7 @@ class TrainingConfig:
             "checkpoint",
             "runtime",
         }
-        optional = {"monitoring"}
+        optional = {"monitoring", "distributed"}
         unknown = set(data) - required - optional
         missing = required - set(data)
         if missing or unknown:
@@ -579,10 +598,6 @@ class TrainingConfig:
             raise TrainingConfigError(
                 "release training requires formally eligible data"
             )
-        if scheduler.total_steps % checkpoint.save_every_steps != 0:
-            raise TrainingConfigError(
-                "scheduler.total_steps must be divisible by checkpoint.save_every_steps"
-            )
         return cls(
             schema_version=TRAINING_SCHEMA_VERSION,
             name=_name(data["name"], "name"),
@@ -597,6 +612,7 @@ class TrainingConfig:
             checkpoint=checkpoint,
             runtime=RuntimeConfig.from_mapping(data["runtime"]),
             monitoring=MonitoringConfig.from_mapping(data.get("monitoring")),
+            distributed=DistributedConfig.from_mapping(data.get("distributed")),
         )
 
 

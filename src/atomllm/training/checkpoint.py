@@ -28,6 +28,7 @@ from atomllm.training.trainer import Trainer
 
 
 CHECKPOINT_FORMAT_VERSION = 1
+DDP_CHECKPOINT_FORMAT_VERSION = 2
 COMPLETE_CONTENT = "atomllm-checkpoint-complete-v1\n"
 PAYLOAD_FILES = {
     "model.safetensors",
@@ -36,6 +37,13 @@ PAYLOAD_FILES = {
     "rng_state.pt",
     "trainer_state.json",
     "data_state.json",
+}
+DDP_PAYLOAD_FILES = {
+    "model.safetensors",
+    "optimizer.pt",
+    "scheduler.pt",
+    "distributed_state.pt",
+    "trainer_state.json",
 }
 _CHECKPOINT_ID_PATTERN = re.compile(r"^step-[0-9]{9}$")
 _LOGICAL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -170,7 +178,40 @@ def capture_rng_state() -> dict[str, Any]:
     }
 
 
+def capture_distributed_rng_state(device: torch.device) -> dict[str, Any]:
+    """Capture only this rank's CUDA generator to avoid touching peer devices."""
+    return {
+        "format_version": 2,
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch_cpu": torch.get_rng_state(),
+        "torch_cuda_local": (
+            torch.cuda.get_rng_state(device) if device.type == "cuda" else None
+        ),
+    }
+
+
 def restore_rng_state(state: Any) -> None:
+    if isinstance(state, dict) and state.get("format_version") == 2:
+        if set(state) != {
+            "format_version",
+            "python",
+            "numpy",
+            "torch_cpu",
+            "torch_cuda_local",
+        }:
+            raise CheckpointError("distributed RNG state has an invalid structure")
+        cuda_state = state["torch_cuda_local"]
+        if cuda_state is not None and not torch.cuda.is_available():
+            raise CheckpointError(
+                "checkpoint contains CUDA RNG state but CUDA is unavailable"
+            )
+        random.setstate(state["python"])
+        np.random.set_state(state["numpy"])
+        torch.set_rng_state(state["torch_cpu"])
+        if cuda_state is not None:
+            torch.cuda.set_rng_state(cuda_state, torch.cuda.current_device())
+        return
     if not isinstance(state, dict) or set(state) != {
         "format_version",
         "python",
@@ -197,13 +238,16 @@ def restore_rng_state(state: Any) -> None:
         torch.cuda.set_rng_state_all(cuda_states)
 
 
-def _file_records(directory: Path) -> dict[str, dict[str, Any]]:
+def _file_records(
+    directory: Path,
+    payload_files: set[str] = PAYLOAD_FILES,
+) -> dict[str, dict[str, Any]]:
     return {
         name: {
             "size_bytes": (directory / name).stat().st_size,
             "sha256": _sha256(directory / name),
         }
-        for name in sorted(PAYLOAD_FILES)
+        for name in sorted(payload_files)
     }
 
 
@@ -229,9 +273,14 @@ def _validate_manifest_structure(
         "milestone",
         "files",
     }
+    if manifest.get("format_version") == DDP_CHECKPOINT_FORMAT_VERSION:
+        required.add("world_size")
     if set(manifest) != required:
         raise CheckpointError("checkpoint manifest fields are invalid")
-    if manifest["format_version"] != CHECKPOINT_FORMAT_VERSION:
+    if manifest["format_version"] not in {
+        CHECKPOINT_FORMAT_VERSION,
+        DDP_CHECKPOINT_FORMAT_VERSION,
+    }:
         raise CheckpointError("checkpoint format version is unsupported")
     if manifest["checkpoint_id"] != expected_checkpoint_id:
         raise CheckpointError("checkpoint ID does not match its directory")
@@ -239,8 +288,16 @@ def _validate_manifest_structure(
         raise CheckpointError("checkpoint global_step does not match its ID")
     if type(manifest["milestone"]) is not bool:
         raise CheckpointError("checkpoint milestone flag is invalid")
+    expected_files = (
+        DDP_PAYLOAD_FILES
+        if manifest["format_version"] == DDP_CHECKPOINT_FORMAT_VERSION
+        else PAYLOAD_FILES
+    )
+    if manifest["format_version"] == DDP_CHECKPOINT_FORMAT_VERSION:
+        if type(manifest["world_size"]) is not int or manifest["world_size"] < 2:
+            raise CheckpointError("checkpoint world_size is invalid")
     files = manifest["files"]
-    if not isinstance(files, dict) or set(files) != PAYLOAD_FILES:
+    if not isinstance(files, dict) or set(files) != expected_files:
         raise CheckpointError("checkpoint payload file list is invalid")
 
 
@@ -277,7 +334,12 @@ def verify_checkpoint_directory(
         for path in checkpoint_dir.iterdir()
         if path.is_file() and path.name not in {"manifest.json", "COMPLETE"}
     }
-    if actual_payload_files != PAYLOAD_FILES:
+    expected_files = (
+        DDP_PAYLOAD_FILES
+        if manifest["format_version"] == DDP_CHECKPOINT_FORMAT_VERSION
+        else PAYLOAD_FILES
+    )
+    if actual_payload_files != expected_files:
         raise CheckpointError("checkpoint directory contains an unexpected payload")
     for name, metadata in manifest["files"].items():
         path = checkpoint_dir / name
@@ -387,6 +449,48 @@ def save_training_checkpoint(
     """Atomically save all state needed for exact training continuation."""
     if type(keep_last) is not int or keep_last <= 0:
         raise ValueError("keep_last must be a positive integer")
+    if trainer.distributed.is_distributed:
+        rank_state = {
+            "rank": trainer.distributed.rank,
+            "data_state": trainer.data_iterator.state().to_mapping(),
+            "rng_state": capture_distributed_rng_state(trainer.device),
+        }
+        rank_states = trainer.distributed.all_gather_object(rank_state)
+        outcome: dict[str, Any] | None = None
+        if trainer.distributed.is_main_process:
+            try:
+                saved = _save_distributed_training_checkpoint(
+                    trainer,
+                    checkpoints_dir,
+                    identity,
+                    rank_states=rank_states,
+                    keep_last=keep_last,
+                    milestone=milestone,
+                )
+                outcome = {
+                    "ok": True,
+                    "checkpoint_id": saved.checkpoint_id,
+                    "manifest_sha256": saved.manifest_sha256,
+                    "removed_checkpoint_ids": saved.removed_checkpoint_ids,
+                }
+            except BaseException as error:
+                outcome = {
+                    "ok": False,
+                    "error": f"{type(error).__name__}: {error}",
+                }
+        outcome = trainer.distributed.broadcast_object(outcome)
+        if not outcome["ok"]:
+            raise CheckpointError(
+                f"distributed checkpoint save failed: {outcome['error']}"
+            )
+        trainer.distributed.barrier()
+        root = Path(checkpoints_dir)
+        return SavedCheckpoint(
+            checkpoint_id=outcome["checkpoint_id"],
+            directory=root / outcome["checkpoint_id"],
+            manifest_sha256=outcome["manifest_sha256"],
+            removed_checkpoint_ids=tuple(outcome["removed_checkpoint_ids"]),
+        )
     trainer_state = trainer.trainer_state()
     data_state = trainer.data_iterator.state()
     checkpoint_name = checkpoint_id(trainer_state.global_step)
@@ -454,6 +558,84 @@ def save_training_checkpoint(
         raise
 
 
+def _save_distributed_training_checkpoint(
+    trainer: Trainer,
+    checkpoints_dir: str | Path,
+    identity: CheckpointIdentity,
+    *,
+    rank_states: list[dict[str, Any]],
+    keep_last: int,
+    milestone: bool,
+) -> SavedCheckpoint:
+    """Write one shared DDP checkpoint after every rank has supplied local state."""
+    expected_ranks = list(range(trainer.distributed.world_size))
+    if sorted(state.get("rank") for state in rank_states) != expected_ranks:
+        raise CheckpointError("distributed rank states are incomplete")
+    trainer_state = trainer.trainer_state()
+    data_state = trainer.data_iterator.state()
+    checkpoint_name = checkpoint_id(trainer_state.global_step)
+    root = Path(checkpoints_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    final_dir = root / checkpoint_name
+    if final_dir.exists():
+        raise CheckpointError(f"checkpoint already exists: {checkpoint_name}")
+    temporary_dir = Path(tempfile.mkdtemp(prefix=f".{checkpoint_name}.tmp-", dir=root))
+    try:
+        save_safetensors_checkpoint(trainer.model, temporary_dir / "model.safetensors")
+        _fsync_file(temporary_dir / "model.safetensors")
+        _torch_save(trainer.optimizer.state_dict(), temporary_dir / "optimizer.pt")
+        _torch_save(trainer.scheduler.state_dict(), temporary_dir / "scheduler.pt")
+        _torch_save(
+            {
+                "format_version": 1,
+                "world_size": trainer.distributed.world_size,
+                "rank_states": sorted(rank_states, key=lambda state: state["rank"]),
+            },
+            temporary_dir / "distributed_state.pt",
+        )
+        _write_json(temporary_dir / "trainer_state.json", trainer_state.to_mapping())
+        manifest = {
+            "format_version": DDP_CHECKPOINT_FORMAT_VERSION,
+            "checkpoint_id": checkpoint_name,
+            "run_id": identity.run_id,
+            "created_at": datetime.now(UTC).isoformat(),
+            "global_step": trainer_state.global_step,
+            "tokens_seen": trainer_state.tokens_seen,
+            "project_version": identity.project_version,
+            "git_commit": identity.git_commit,
+            "git_dirty": identity.git_dirty,
+            "model_signature": model_signature(trainer),
+            "tokenizer_sha256": identity.tokenizer_sha256,
+            "config_sha256": identity.config_sha256,
+            "dataset_id": data_state.dataset_id,
+            "dataset_manifest_sha256": data_state.dataset_manifest_sha256,
+            "world_size": trainer.distributed.world_size,
+            "milestone": milestone,
+            "files": _file_records(temporary_dir, DDP_PAYLOAD_FILES),
+        }
+        manifest_path = temporary_dir / "manifest.json"
+        _write_json(manifest_path, manifest)
+        complete_path = temporary_dir / "COMPLETE"
+        complete_path.write_text(COMPLETE_CONTENT, encoding="utf-8")
+        _fsync_file(complete_path)
+        _fsync_directory(temporary_dir)
+        manifest_sha256 = _sha256(manifest_path)
+        os.replace(temporary_dir, final_dir)
+        _fsync_directory(root)
+        verify_checkpoint_directory(final_dir, expected_manifest_sha256=manifest_sha256)
+        _write_latest(root, checkpoint_name, manifest_sha256)
+        removed = _prune_checkpoints(root, keep_last)
+        return SavedCheckpoint(
+            checkpoint_id=checkpoint_name,
+            directory=final_dir,
+            manifest_sha256=manifest_sha256,
+            removed_checkpoint_ids=removed,
+        )
+    except BaseException:
+        shutil.rmtree(temporary_dir, ignore_errors=True)
+        raise
+
+
 def _validate_compatibility(
     manifest: dict[str, Any],
     trainer: Trainer,
@@ -478,6 +660,9 @@ def _validate_compatibility(
         raise CheckpointError(
             f"checkpoint is incompatible: {', '.join(sorted(mismatches))}"
         )
+    checkpoint_world_size = manifest.get("world_size", 1)
+    if checkpoint_world_size != trainer.distributed.world_size:
+        raise CheckpointError("checkpoint is incompatible: world_size")
 
 
 def restore_training_checkpoint(
@@ -506,9 +691,33 @@ def restore_training_checkpoint(
     trainer_state = TrainerState.from_mapping(
         _read_json(checkpoint_dir / "trainer_state.json", "trainer state")
     )
-    data_state = DataState.from_mapping(
-        _read_json(checkpoint_dir / "data_state.json", "data state")
-    )
+    distributed_state = None
+    if manifest["format_version"] == DDP_CHECKPOINT_FORMAT_VERSION:
+        distributed_state = torch.load(
+            checkpoint_dir / "distributed_state.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
+        if (
+            not isinstance(distributed_state, dict)
+            or distributed_state.get("format_version") != 1
+            or distributed_state.get("world_size") != trainer.distributed.world_size
+            or not isinstance(distributed_state.get("rank_states"), list)
+            or len(distributed_state["rank_states"]) != trainer.distributed.world_size
+        ):
+            raise CheckpointError("distributed checkpoint state is invalid")
+        try:
+            local_state = distributed_state["rank_states"][trainer.distributed.rank]
+        except (IndexError, TypeError) as error:
+            raise CheckpointError("distributed rank state is missing") from error
+        if local_state.get("rank") != trainer.distributed.rank:
+            raise CheckpointError("distributed rank state ordering is invalid")
+        data_state = DataState.from_mapping(local_state.get("data_state"))
+        rng_state = local_state.get("rng_state")
+    else:
+        data_state = DataState.from_mapping(
+            _read_json(checkpoint_dir / "data_state.json", "data state")
+        )
     load_safetensors_checkpoint(
         trainer.model,
         checkpoint_dir / "model.safetensors",
@@ -527,11 +736,12 @@ def restore_training_checkpoint(
         map_location="cpu",
         weights_only=False,
     )
-    rng_state = torch.load(
-        checkpoint_dir / "rng_state.pt",
-        map_location="cpu",
-        weights_only=False,
-    )
+    if distributed_state is None:
+        rng_state = torch.load(
+            checkpoint_dir / "rng_state.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
     trainer.optimizer.load_state_dict(optimizer_state)
     del optimizer_state
     if trainer.device.type == "cuda":

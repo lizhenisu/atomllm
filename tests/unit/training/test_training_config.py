@@ -29,6 +29,18 @@ def test_loads_bound_atom_5m_baseline() -> None:
     assert config.monitoring.enabled
     assert config.monitoring.tensorboard
     assert config.monitoring.log_every_steps == 1
+    assert not config.distributed.enabled
+    assert config.distributed.backend == "nccl"
+
+
+def test_loads_distributed_training_config() -> None:
+    config = load_training_config("configs/training/atom-base-300m-long-6x3090-v1.yaml")
+
+    assert config.distributed.enabled
+    assert config.distributed.backend == "nccl"
+    assert config.scheduler.total_steps == 61865
+    assert config.scheduler.warmup_steps == 816
+    assert config.checkpoint.save_every_steps == 50
 
 
 def test_loads_explicit_one_variable_atom_5m_matrix() -> None:

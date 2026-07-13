@@ -6,6 +6,7 @@ import hashlib
 import math
 from bisect import bisect_right
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -58,6 +59,8 @@ class ResumableBatchIterator:
         *,
         batch_size: int,
         seed: int,
+        rank: int = 0,
+        world_size: int = 1,
     ) -> None:
         if type(batch_size) is not int or batch_size <= 0:
             raise ValueError("batch_size must be a positive integer")
@@ -65,9 +68,18 @@ class ResumableBatchIterator:
             raise ValueError("batch_size must not exceed the dataset")
         if type(seed) is not int or seed < 0:
             raise ValueError("seed must be a non-negative integer")
+        if type(world_size) is not int or world_size <= 0:
+            raise ValueError("world_size must be a positive integer")
+        if type(rank) is not int or not 0 <= rank < world_size:
+            raise ValueError("rank must be within world_size")
+        if batch_size * world_size > len(dataset):
+            raise ValueError("global batch size must not exceed the dataset")
         self.dataset = dataset
         self.batch_size = batch_size
         self.seed = seed
+        self.rank = rank
+        self.world_size = world_size
+        self.global_batch_size = batch_size * world_size
         self.epoch = 0
         self.position = 0
         self._order = self._order_for_epoch(0)
@@ -83,7 +95,7 @@ class ResumableBatchIterator:
         return torch.randperm(len(self.dataset), generator=generator)
 
     def _advance_epoch_if_needed(self) -> None:
-        if self.position + self.batch_size <= len(self.dataset):
+        if self.position + self.global_batch_size <= len(self.dataset):
             return
         self.epoch += 1
         self.position = 0
@@ -91,9 +103,10 @@ class ResumableBatchIterator:
 
     def next_batch(self) -> torch.Tensor:
         self._advance_epoch_if_needed()
-        indices = self._order[self.position : self.position + self.batch_size]
+        start = self.position + self.rank * self.batch_size
+        indices = self._order[start : start + self.batch_size]
         batch = torch.stack([self.dataset[int(index)] for index in indices])
-        self.position += self.batch_size
+        self.position += self.global_batch_size
         return batch
 
     def state(self) -> DataState:
@@ -147,8 +160,10 @@ class ResumableBatchIterator:
             raise TrainingDataError("sample_index must equal sampler_state.position")
         if state.sample_index > len(self.dataset):
             raise TrainingDataError("data cursor position exceeds the dataset")
-        if state.sample_index % self.batch_size != 0:
-            raise TrainingDataError("data cursor is not on a full-batch boundary")
+        if state.sample_index % self.global_batch_size != 0:
+            raise TrainingDataError(
+                "data cursor is not on a full-batch boundary for the global batch"
+            )
         self.epoch = state.epoch
         self.position = state.sample_index
         self._order = self._order_for_epoch(self.epoch)
@@ -157,15 +172,39 @@ class ResumableBatchIterator:
 class ShardedTokenDataset:
     """Expose fixed-length samples over uint16 token shards with bounded RAM."""
 
-    def __init__(self, directory: str | Path, *, sequence_length: int) -> None:
+    def __init__(
+        self,
+        directory: str | Path,
+        *,
+        sequence_length: int,
+        verified_manifest: dict[str, Any] | None = None,
+        manifest_sha256: str | None = None,
+    ) -> None:
         if type(sequence_length) is not int or sequence_length < 2:
             raise ValueError("sequence_length must be an integer of at least 2")
         self.directory = Path(directory)
-        self.manifest = verify_formal_token_shards(self.directory)
+        manifest_path = self.directory / "manifest.json"
+        if verified_manifest is None:
+            if manifest_sha256 is not None:
+                raise ValueError("manifest_sha256 requires a verified_manifest")
+            self.manifest = verify_formal_token_shards(self.directory)
+        else:
+            if not isinstance(manifest_sha256, str):
+                raise ValueError("verified_manifest requires manifest_sha256")
+            actual_manifest_sha256 = hashlib.sha256(
+                manifest_path.read_bytes()
+            ).hexdigest()
+            if actual_manifest_sha256 != manifest_sha256:
+                raise TrainingDataError(
+                    "broadcast token-shard manifest does not match local storage"
+                )
+            self.manifest = verified_manifest
         self.dataset_id = self.manifest["dataset_id"]
-        self.manifest_sha256 = hashlib.sha256(
-            (self.directory / "manifest.json").read_bytes()
-        ).hexdigest()
+        self.manifest_sha256 = (
+            manifest_sha256
+            if manifest_sha256 is not None
+            else hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        )
         self.sequence_length = sequence_length
         self._tokens: list[np.memmap] = []
         self._block_counts: list[int] = []
@@ -174,9 +213,17 @@ class ShardedTokenDataset:
         for item in self.manifest["shards"]:
             token_count = item["token_count"]
             block_count = token_count // sequence_length
+            token_path = self.directory / item["token_file"]["name"]
+            if (
+                not token_path.is_file()
+                or token_path.stat().st_size != item["token_file"]["size_bytes"]
+            ):
+                raise TrainingDataError(
+                    f"token shard is missing or truncated: {token_path.name}"
+                )
             self._tokens.append(
                 np.memmap(
-                    self.directory / item["token_file"]["name"],
+                    token_path,
                     mode="r",
                     dtype="<u2",
                     shape=(token_count,),
@@ -217,6 +264,8 @@ class ResumableShardedBatchIterator:
         *,
         batch_size: int,
         seed: int,
+        rank: int = 0,
+        world_size: int = 1,
     ) -> None:
         if type(batch_size) is not int or batch_size <= 0:
             raise ValueError("batch_size must be a positive integer")
@@ -224,9 +273,18 @@ class ResumableShardedBatchIterator:
             raise ValueError("batch_size must not exceed the dataset")
         if type(seed) is not int or seed < 0:
             raise ValueError("seed must be a non-negative integer")
+        if type(world_size) is not int or world_size <= 0:
+            raise ValueError("world_size must be a positive integer")
+        if type(rank) is not int or not 0 <= rank < world_size:
+            raise ValueError("rank must be within world_size")
+        if batch_size * world_size > len(dataset):
+            raise ValueError("global batch size must not exceed the dataset")
         self.dataset = dataset
         self.batch_size = batch_size
         self.seed = seed
+        self.rank = rank
+        self.world_size = world_size
+        self.global_batch_size = batch_size * world_size
         self.epoch = 0
         self.position = 0
         self._multiplier, self._offset = self._permutation_for_epoch(0)
@@ -247,7 +305,7 @@ class ResumableShardedBatchIterator:
         return (self._multiplier * position + self._offset) % len(self.dataset)
 
     def _advance_epoch_if_needed(self) -> None:
-        if self.position + self.batch_size <= len(self.dataset):
+        if self.position + self.global_batch_size <= len(self.dataset):
             return
         self.epoch += 1
         self.position = 0
@@ -257,22 +315,26 @@ class ResumableShardedBatchIterator:
         self._advance_epoch_if_needed()
         indices = [
             self._dataset_index(position)
-            for position in range(self.position, self.position + self.batch_size)
+            for position in range(
+                self.position + self.rank * self.batch_size,
+                self.position + (self.rank + 1) * self.batch_size,
+            )
         ]
         batch = torch.stack([self.dataset[index] for index in indices])
-        self.position += self.batch_size
+        self.position += self.global_batch_size
         return batch
 
     def _next_location(self) -> tuple[int, int, int]:
         epoch = self.epoch
         position = self.position
-        if position + self.batch_size > len(self.dataset):
+        if position + self.global_batch_size > len(self.dataset):
             epoch += 1
             position = 0
             multiplier, offset = self._permutation_for_epoch(epoch)
-            dataset_index = (multiplier * position + offset) % len(self.dataset)
+            rank_position = position + self.rank * self.batch_size
+            dataset_index = (multiplier * rank_position + offset) % len(self.dataset)
         else:
-            dataset_index = self._dataset_index(position)
+            dataset_index = self._dataset_index(position + self.rank * self.batch_size)
         shard_index, local_block = self.dataset.locate(dataset_index)
         return shard_index, local_block, epoch
 
@@ -309,8 +371,10 @@ class ResumableShardedBatchIterator:
             raise TrainingDataError("sample_index must equal sampler_state.position")
         if state.sample_index > len(self.dataset):
             raise TrainingDataError("data cursor position exceeds the dataset")
-        if state.sample_index % self.batch_size != 0:
-            raise TrainingDataError("data cursor is not on a full-batch boundary")
+        if state.sample_index % self.global_batch_size != 0:
+            raise TrainingDataError(
+                "data cursor is not on a full-batch boundary for the global batch"
+            )
         self.epoch = state.epoch
         self.position = state.sample_index
         self._multiplier, self._offset = self._permutation_for_epoch(self.epoch)
