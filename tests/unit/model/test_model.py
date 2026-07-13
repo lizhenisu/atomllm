@@ -143,7 +143,8 @@ def test_block_gradient_checkpointing_matches_regular_gradients() -> None:
         input_ids,
         labels=input_ids,
         gradient_checkpointing=True,
-        checkpoint_segment_layers=2,
+        checkpoint_segment_layers=1,
+        checkpoint_interval_segments=2,
     )
     assert checkpointed.loss is not None
     checkpointed.loss.backward()

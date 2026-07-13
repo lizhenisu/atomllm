@@ -80,6 +80,11 @@ class RotaryEmbedding(nn.Module):
         if position_ids is not None and offset != 0:
             raise ValueError("offset must be zero when position_ids are provided")
         if position_ids is None:
+            if offset + sequence_length > self.max_sequence_length:
+                raise ValueError(
+                    "position exceeds configured max_sequence_length "
+                    f"{self.max_sequence_length}"
+                )
             positions = torch.arange(
                 offset,
                 offset + sequence_length,
@@ -108,13 +113,18 @@ class RotaryEmbedding(nn.Module):
             else:
                 raise ValueError("position_ids must be 1D or 2D")
             positions = position_ids.to(device=query.device, dtype=torch.long)
-        if positions.min().item() < 0:
-            raise ValueError("position_ids must be non-negative")
-        if positions.max().item() >= self.max_sequence_length:
-            raise ValueError(
-                "position exceeds configured max_sequence_length "
-                f"{self.max_sequence_length}"
+            positions_are_valid = torch.all(
+                (positions >= 0) & (positions < self.max_sequence_length)
             )
+            if positions.device.type == "cuda":
+                torch._assert_async(
+                    positions_are_valid,
+                    "position_ids are outside the configured sequence range",
+                )
+            elif not positions_are_valid.item():
+                raise ValueError(
+                    "position_ids are outside the configured sequence range"
+                )
         return positions
 
     def _cos_sin(

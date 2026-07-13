@@ -14,6 +14,7 @@ from atomllm.model.model import AtomLLM
 from atomllm.training.checkpoint import (
     CheckpointError,
     CheckpointIdentity,
+    initialize_from_training_checkpoint,
     restore_training_checkpoint,
     save_training_checkpoint,
     verify_checkpoint_directory,
@@ -94,8 +95,9 @@ def tiny_training_config() -> TrainingConfig:
 def make_trainer(
     packed_dataset_dir: Path,
     model_state: dict[str, torch.Tensor],
+    config: TrainingConfig | None = None,
 ) -> Trainer:
-    config = tiny_training_config()
+    config = tiny_training_config() if config is None else config
     model = tiny_model()
     model.load_state_dict(model_state)
     dataset = PackedTokenDataset(packed_dataset_dir)
@@ -177,6 +179,51 @@ def test_interrupted_training_matches_uninterrupted_training_exactly(
     assert actual_random == expected_random
 
 
+def test_variable_accumulation_resume_matches_uninterrupted_training(
+    tmp_path: Path,
+    packed_dataset_dir: Path,
+) -> None:
+    config = tiny_training_config()
+    config = replace(
+        config,
+        batch=replace(
+            config.batch,
+            gradient_accumulation_steps=2,
+            gradient_accumulation_schedule=(1, 2),
+        ),
+    )
+    torch.manual_seed(351)
+    initial_state = tiny_model().state_dict()
+    continuous = make_trainer(packed_dataset_dir, initial_state, config)
+    interrupted = make_trainer(packed_dataset_dir, initial_state, config)
+
+    continuous.train(4)
+    interrupted.train(1)
+    save_training_checkpoint(
+        interrupted,
+        tmp_path / "checkpoints",
+        checkpoint_identity(),
+        keep_last=2,
+    )
+    resumed = make_trainer(packed_dataset_dir, initial_state, config)
+    restore_training_checkpoint(
+        resumed,
+        tmp_path / "checkpoints",
+        checkpoint_identity(),
+    )
+    resumed.train(3)
+
+    continuous_state = continuous.trainer_state()
+    resumed_state = resumed.trainer_state()
+    assert continuous_state.global_step == resumed_state.global_step == 4
+    assert continuous_state.samples_seen == resumed_state.samples_seen == 12
+    assert continuous_state.tokens_seen == resumed_state.tokens_seen == 48
+    for expected, actual in zip(
+        continuous.model.parameters(), resumed.model.parameters(), strict=True
+    ):
+        assert torch.equal(expected, actual)
+
+
 def test_checkpoint_rejects_corruption_and_missing_complete(
     tmp_path: Path,
     packed_dataset_dir: Path,
@@ -204,6 +251,46 @@ def test_checkpoint_rejects_corruption_and_missing_complete(
     (saved.directory / "COMPLETE").unlink()
     with pytest.raises(CheckpointError, match="COMPLETE"):
         verify_checkpoint_directory(saved.directory)
+
+
+def test_stage_initialization_loads_weights_but_resets_stage_state(
+    tmp_path: Path,
+    packed_dataset_dir: Path,
+) -> None:
+    torch.manual_seed(451)
+    initial_state = tiny_model().state_dict()
+    source = make_trainer(packed_dataset_dir, initial_state)
+    source.train(1)
+    identity = checkpoint_identity()
+    identity = replace(
+        identity,
+        tokenizer_sha256=source.config.data.tokenizer_sha256,
+    )
+    saved = save_training_checkpoint(
+        source,
+        tmp_path / "checkpoints",
+        identity,
+        keep_last=2,
+        milestone=True,
+    )
+    target = make_trainer(packed_dataset_dir, tiny_model().state_dict())
+
+    manifest = initialize_from_training_checkpoint(
+        target,
+        saved.directory,
+        expected_config_sha256=file_sha256(TRAINING_CONFIG_PATH),
+        expected_final_step=1,
+        load_optimizer_state=True,
+    )
+
+    assert manifest["checkpoint_id"] == "step-000000001"
+    assert target.trainer_state().global_step == 0
+    assert target.trainer_state().tokens_seen == 0
+    for expected, actual in zip(
+        source.model.parameters(), target.model.parameters(), strict=True
+    ):
+        assert torch.equal(expected, actual)
+    assert target.optimizer.state_dict()["state"]
 
 
 def test_duplicate_step_is_rejected_and_failed_save_keeps_latest(

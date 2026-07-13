@@ -141,23 +141,25 @@ class DataBinding:
     tokenizer_version_id: str
     tokenizer_sha256: str
     formal_training_eligible: bool
+    dataset_manifest_sha256: str | None = None
 
     @classmethod
     def from_mapping(cls, value: Any) -> DataBinding:
         data = _mapping(value, "data")
-        _exact_keys(
-            data,
-            {
-                "data_version_id",
-                "data_manifest_sha256",
-                "split",
-                "split_sha256",
-                "tokenizer_version_id",
-                "tokenizer_sha256",
-                "formal_training_eligible",
-            },
-            "data",
-        )
+        required = {
+            "data_version_id",
+            "data_manifest_sha256",
+            "split",
+            "split_sha256",
+            "tokenizer_version_id",
+            "tokenizer_sha256",
+            "formal_training_eligible",
+        }
+        optional = {"dataset_manifest_sha256"}
+        unknown = set(data) - required - optional
+        missing = required - set(data)
+        if missing or unknown:
+            _exact_keys(data, required | (optional & set(data)), "data")
         for field_name in ("data_version_id", "tokenizer_version_id"):
             if not isinstance(data[field_name], str) or not data[field_name]:
                 raise TrainingConfigError(f"data.{field_name} must be non-empty")
@@ -179,6 +181,14 @@ class DataBinding:
                 "data.tokenizer_sha256",
             ),
             formal_training_eligible=data["formal_training_eligible"],
+            dataset_manifest_sha256=(
+                None
+                if data.get("dataset_manifest_sha256") is None
+                else _sha256(
+                    data["dataset_manifest_sha256"],
+                    "data.dataset_manifest_sha256",
+                )
+            ),
         )
 
 
@@ -187,6 +197,7 @@ class BatchConfig:
     sequence_length: int
     micro_batch_size: int
     gradient_accumulation_steps: int
+    gradient_accumulation_schedule: tuple[int, ...] = ()
 
     @property
     def tokens_per_micro_batch(self) -> int:
@@ -196,18 +207,66 @@ class BatchConfig:
     def tokens_per_optimizer_step(self) -> int:
         return self.tokens_per_micro_batch * self.gradient_accumulation_steps
 
+    def accumulation_steps_for_step(self, global_step: int) -> int:
+        if type(global_step) is not int or global_step < 0:
+            raise ValueError("global_step must be a non-negative integer")
+        if not self.gradient_accumulation_schedule:
+            return self.gradient_accumulation_steps
+        return self.gradient_accumulation_schedule[
+            global_step % len(self.gradient_accumulation_schedule)
+        ]
+
+    def micro_steps_through(self, optimizer_steps: int) -> int:
+        if type(optimizer_steps) is not int or optimizer_steps < 0:
+            raise ValueError("optimizer_steps must be a non-negative integer")
+        if not self.gradient_accumulation_schedule:
+            return optimizer_steps * self.gradient_accumulation_steps
+        schedule = self.gradient_accumulation_schedule
+        cycles, remainder = divmod(optimizer_steps, len(schedule))
+        return cycles * sum(schedule) + sum(schedule[:remainder])
+
+    def samples_through(self, optimizer_steps: int, world_size: int) -> int:
+        if type(world_size) is not int or world_size <= 0:
+            raise ValueError("world_size must be a positive integer")
+        return (
+            self.micro_steps_through(optimizer_steps)
+            * self.micro_batch_size
+            * world_size
+        )
+
+    def tokens_through(self, optimizer_steps: int, world_size: int) -> int:
+        return self.samples_through(optimizer_steps, world_size) * self.sequence_length
+
     @classmethod
     def from_mapping(cls, value: Any) -> BatchConfig:
         data = _mapping(value, "batch")
-        _exact_keys(
-            data,
-            {
-                "sequence_length",
-                "micro_batch_size",
-                "gradient_accumulation_steps",
-            },
-            "batch",
+        required = {
+            "sequence_length",
+            "micro_batch_size",
+            "gradient_accumulation_steps",
+        }
+        optional = {"gradient_accumulation_schedule"}
+        unknown = set(data) - required - optional
+        missing = required - set(data)
+        if missing or unknown:
+            _exact_keys(data, required | (optional & set(data)), "batch")
+        raw_schedule = data.get("gradient_accumulation_schedule", [])
+        if not isinstance(raw_schedule, list):
+            raise TrainingConfigError(
+                "batch.gradient_accumulation_schedule must be a list"
+            )
+        schedule = tuple(
+            _positive_int(value, f"batch.gradient_accumulation_schedule[{index}]")
+            for index, value in enumerate(raw_schedule)
         )
+        configured_steps = _positive_int(
+            data["gradient_accumulation_steps"],
+            "batch.gradient_accumulation_steps",
+        )
+        if schedule and max(schedule) != configured_steps:
+            raise TrainingConfigError(
+                "batch.gradient_accumulation_steps must equal the schedule maximum"
+            )
         return cls(
             sequence_length=_positive_int(
                 data["sequence_length"],
@@ -217,10 +276,8 @@ class BatchConfig:
                 data["micro_batch_size"],
                 "batch.micro_batch_size",
             ),
-            gradient_accumulation_steps=_positive_int(
-                data["gradient_accumulation_steps"],
-                "batch.gradient_accumulation_steps",
-            ),
+            gradient_accumulation_steps=configured_steps,
+            gradient_accumulation_schedule=schedule,
         )
 
 
@@ -426,6 +483,9 @@ class RuntimeConfig:
     deterministic: bool
     loss_chunk_size: int | None = None
     checkpoint_segment_layers: int = 1
+    checkpoint_interval_segments: int = 1
+    ddp_bucket_cap_mb: int = 25
+    ddp_static_graph: bool = False
 
     @classmethod
     def from_mapping(cls, value: Any) -> RuntimeConfig:
@@ -437,7 +497,13 @@ class RuntimeConfig:
             "compile_model",
             "deterministic",
         }
-        optional = {"loss_chunk_size", "checkpoint_segment_layers"}
+        optional = {
+            "loss_chunk_size",
+            "checkpoint_segment_layers",
+            "checkpoint_interval_segments",
+            "ddp_bucket_cap_mb",
+            "ddp_static_graph",
+        }
         unknown = set(data) - required - optional
         missing = required - set(data)
         if missing or unknown:
@@ -463,6 +529,8 @@ class RuntimeConfig:
         ):
             if type(data[field_name]) is not bool:
                 raise TrainingConfigError(f"runtime.{field_name} must be a boolean")
+        if "ddp_static_graph" in data and type(data["ddp_static_graph"]) is not bool:
+            raise TrainingConfigError("runtime.ddp_static_graph must be a boolean")
         if data["device"] == "cpu" and data["precision"] != "fp32":
             raise TrainingConfigError("CPU training must use fp32")
         return cls(
@@ -484,6 +552,23 @@ class RuntimeConfig:
                     "runtime.checkpoint_segment_layers",
                 )
             ),
+            checkpoint_interval_segments=(
+                1
+                if "checkpoint_interval_segments" not in data
+                else _positive_int(
+                    data["checkpoint_interval_segments"],
+                    "runtime.checkpoint_interval_segments",
+                )
+            ),
+            ddp_bucket_cap_mb=(
+                25
+                if "ddp_bucket_cap_mb" not in data
+                else _positive_int(
+                    data["ddp_bucket_cap_mb"],
+                    "runtime.ddp_bucket_cap_mb",
+                )
+            ),
+            ddp_static_graph=data.get("ddp_static_graph", False),
         )
 
 
@@ -538,6 +623,112 @@ class DistributedConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class TrainingBudgetConfig:
+    stage: str
+    expected_world_size: int
+    expected_tokens_per_step: tuple[int, ...]
+    expected_training_samples: int
+    expected_total_tokens: int
+    available_candidate_samples: int
+    minimum_coverage_ratio: float
+
+    @classmethod
+    def from_mapping(cls, value: Any) -> TrainingBudgetConfig:
+        data = _mapping(value, "budget")
+        _exact_keys(
+            data,
+            {
+                "stage",
+                "expected_world_size",
+                "expected_tokens_per_step",
+                "expected_training_samples",
+                "expected_total_tokens",
+                "available_candidate_samples",
+                "minimum_coverage_ratio",
+            },
+            "budget",
+        )
+        if data["stage"] not in {"A", "B", "C"}:
+            raise TrainingConfigError("budget.stage must be A, B, or C")
+        raw_tokens = data["expected_tokens_per_step"]
+        if not isinstance(raw_tokens, list) or not raw_tokens:
+            raise TrainingConfigError(
+                "budget.expected_tokens_per_step must be a non-empty list"
+            )
+        return cls(
+            stage=data["stage"],
+            expected_world_size=_positive_int(
+                data["expected_world_size"], "budget.expected_world_size"
+            ),
+            expected_tokens_per_step=tuple(
+                _positive_int(value, f"budget.expected_tokens_per_step[{index}]")
+                for index, value in enumerate(raw_tokens)
+            ),
+            expected_training_samples=_positive_int(
+                data["expected_training_samples"],
+                "budget.expected_training_samples",
+            ),
+            expected_total_tokens=_positive_int(
+                data["expected_total_tokens"], "budget.expected_total_tokens"
+            ),
+            available_candidate_samples=_positive_int(
+                data["available_candidate_samples"],
+                "budget.available_candidate_samples",
+            ),
+            minimum_coverage_ratio=_finite_float(
+                data["minimum_coverage_ratio"],
+                "budget.minimum_coverage_ratio",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class InitializationConfig:
+    source_stage: str
+    source_config_path: Path
+    source_config_sha256: str
+    source_final_step: int
+    load_optimizer_state: bool
+
+    @classmethod
+    def from_mapping(cls, value: Any) -> InitializationConfig:
+        data = _mapping(value, "initialization")
+        _exact_keys(
+            data,
+            {
+                "source_stage",
+                "source_config_path",
+                "source_config_sha256",
+                "source_final_step",
+                "load_optimizer_state",
+            },
+            "initialization",
+        )
+        if data["source_stage"] not in {"A", "B"}:
+            raise TrainingConfigError("initialization.source_stage must be A or B")
+        if type(data["load_optimizer_state"]) is not bool:
+            raise TrainingConfigError(
+                "initialization.load_optimizer_state must be a boolean"
+            )
+        return cls(
+            source_stage=data["source_stage"],
+            source_config_path=_relative_path(
+                data["source_config_path"], "initialization.source_config_path"
+            ),
+            source_config_sha256=_sha256(
+                data["source_config_sha256"],
+                "initialization.source_config_sha256",
+            ),
+            source_final_step=_positive_int(
+                data["source_final_step"], "initialization.source_final_step"
+            ),
+            load_optimizer_state=data["load_optimizer_state"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class TrainingConfig:
     schema_version: int
     name: str
@@ -553,6 +744,8 @@ class TrainingConfig:
     runtime: RuntimeConfig
     monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
     distributed: DistributedConfig = field(default_factory=DistributedConfig)
+    budget: TrainingBudgetConfig | None = None
+    initialization: InitializationConfig | None = None
 
     @classmethod
     def from_mapping(cls, value: Any) -> TrainingConfig:
@@ -571,7 +764,7 @@ class TrainingConfig:
             "checkpoint",
             "runtime",
         }
-        optional = {"monitoring", "distributed"}
+        optional = {"monitoring", "distributed", "budget", "initialization"}
         unknown = set(data) - required - optional
         missing = required - set(data)
         if missing or unknown:
@@ -598,7 +791,17 @@ class TrainingConfig:
             raise TrainingConfigError(
                 "release training requires formally eligible data"
             )
-        return cls(
+        budget = (
+            None
+            if data.get("budget") is None
+            else TrainingBudgetConfig.from_mapping(data["budget"])
+        )
+        initialization = (
+            None
+            if data.get("initialization") is None
+            else InitializationConfig.from_mapping(data["initialization"])
+        )
+        config = cls(
             schema_version=TRAINING_SCHEMA_VERSION,
             name=_name(data["name"], "name"),
             status=data["status"],
@@ -613,7 +816,50 @@ class TrainingConfig:
             runtime=RuntimeConfig.from_mapping(data["runtime"]),
             monitoring=MonitoringConfig.from_mapping(data.get("monitoring")),
             distributed=DistributedConfig.from_mapping(data.get("distributed")),
+            budget=budget,
+            initialization=initialization,
         )
+        if budget is not None:
+            schedule = batch.gradient_accumulation_schedule or (
+                batch.gradient_accumulation_steps,
+            )
+            expected_tokens = tuple(
+                batch.tokens_per_micro_batch * steps * budget.expected_world_size
+                for steps in schedule
+            )
+            if budget.expected_tokens_per_step != expected_tokens:
+                raise TrainingConfigError(
+                    "budget.expected_tokens_per_step does not match batch schedule"
+                )
+            actual_samples = batch.samples_through(
+                scheduler.total_steps,
+                budget.expected_world_size,
+            )
+            actual_tokens = batch.tokens_through(
+                scheduler.total_steps,
+                budget.expected_world_size,
+            )
+            if budget.expected_training_samples != actual_samples:
+                raise TrainingConfigError(
+                    "budget.expected_training_samples does not match schedule"
+                )
+            if budget.expected_total_tokens != actual_tokens:
+                raise TrainingConfigError(
+                    "budget.expected_total_tokens does not match schedule"
+                )
+            coverage = actual_samples / budget.available_candidate_samples
+            if coverage < budget.minimum_coverage_ratio:
+                raise TrainingConfigError("budget coverage is below its minimum")
+            required_source = {"A": None, "B": "A", "C": "B"}[budget.stage]
+            actual_source = (
+                None if initialization is None else initialization.source_stage
+            )
+            if actual_source != required_source:
+                raise TrainingConfigError(
+                    f"stage {budget.stage} initialization source must be "
+                    f"{required_source}"
+                )
+        return config
 
 
 @dataclass(frozen=True, slots=True)
@@ -773,6 +1019,10 @@ def load_training_config(
         raise TrainingConfigError("bound tokenizer SHA-256 does not match model config")
     if config.batch.sequence_length > model_config.dimensions.max_sequence_length:
         raise TrainingConfigError("batch sequence length exceeds model context")
+    if config.initialization is not None:
+        source_path = Path(project_root) / config.initialization.source_config_path
+        if file_sha256(source_path) != config.initialization.source_config_sha256:
+            raise TrainingConfigError("initialization source config SHA-256 mismatch")
     return config
 
 
@@ -817,14 +1067,45 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.matrix is None:
         base = load_training_config(args.config, project_root=args.project_root)
-        summary = {
+        summary: dict[str, Any] = {
             "config": base.name,
             "formal_training_eligible": base.data.formal_training_eligible,
             "model": base.model.name,
             "parameter_count": base.model.expected_parameter_count,
             "total_steps": base.scheduler.total_steps,
-            "tokens_per_optimizer_step": base.batch.tokens_per_optimizer_step,
+            "tokens_per_rank_at_max_accumulation": (
+                base.batch.tokens_per_optimizer_step
+            ),
         }
+        if base.budget is not None:
+            summary.update(
+                {
+                    "stage": base.budget.stage,
+                    "dataset_id": base.data.data_version_id,
+                    "dataset_manifest_sha256": (base.data.dataset_manifest_sha256),
+                    "world_size": base.budget.expected_world_size,
+                    "sequence_length": base.batch.sequence_length,
+                    "micro_batch_size": base.batch.micro_batch_size,
+                    "gradient_accumulation_schedule": (
+                        list(base.batch.gradient_accumulation_schedule)
+                        or [base.batch.gradient_accumulation_steps]
+                    ),
+                    "global_tokens_per_step": list(
+                        base.budget.expected_tokens_per_step
+                    ),
+                    "expected_total_tokens": base.budget.expected_total_tokens,
+                    "expected_training_samples": (
+                        base.budget.expected_training_samples
+                    ),
+                    "available_candidate_samples": (
+                        base.budget.available_candidate_samples
+                    ),
+                    "coverage_ratio": (
+                        base.budget.expected_training_samples
+                        / base.budget.available_candidate_samples
+                    ),
+                }
+            )
         print(json.dumps(summary, sort_keys=True))
         return 0
     matrix, base = load_experiment_matrix(args.matrix, project_root=args.project_root)

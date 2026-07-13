@@ -1,0 +1,11 @@
+schema_version: 1
+name: formal-long-40k-v1
+stage: C
+source_dir: artifacts/training-data/formal-token-shards-v2
+output_dir: artifacts/training-data/formal-long-40k-v1
+window_length: 40960
+stride: 16384
+expected_candidate_count: 15382
+# Six more windows than the six-GPU plan make the view exactly divisible by
+# eight ranks. No prescribed window is removed; token coverage increases 0.049%.
+selection_count: 12216

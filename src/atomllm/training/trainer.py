@@ -25,6 +25,7 @@ from atomllm.model.config import load_model_config
 from atomllm.model.model import AtomLLM
 from atomllm.training.config import TrainingConfig, file_sha256, load_training_config
 from atomllm.training.data import (
+    LongWindowDataset,
     PackedTokenDataset,
     ResumableBatchIterator,
     ResumableShardedBatchIterator,
@@ -98,6 +99,7 @@ def build_adamw_optimizer(
     if not decay or not no_decay:
         raise TrainingError("optimizer parameter groups are incomplete")
     optimizer = config.optimizer
+    use_fused_optimizer = all(parameter.is_cuda for parameter in (*decay, *no_decay))
     return torch.optim.AdamW(
         [
             {
@@ -114,6 +116,7 @@ def build_adamw_optimizer(
         lr=optimizer.learning_rate,
         betas=(optimizer.beta1, optimizer.beta2),
         eps=optimizer.epsilon,
+        fused=use_fused_optimizer,
     )
 
 
@@ -128,7 +131,9 @@ class Trainer:
         distributed: DistributedContext | None = None,
     ) -> None:
         if config.runtime.compile_model:
-            raise TrainingError("compile_model is not implemented yet")
+            raise TrainingError(
+                "compile_model is slower for the current AtomLLM training graph"
+            )
         if config.runtime.device == "cuda" and not torch.cuda.is_available():
             raise TrainingError("CUDA training was requested but is unavailable")
         if data_iterator.batch_size != config.batch.micro_batch_size:
@@ -138,6 +143,13 @@ class Trainer:
 
         self.config = config
         self.distributed = distributed or DistributedContext()
+        if (
+            config.budget is not None
+            and self.distributed.world_size != config.budget.expected_world_size
+        ):
+            raise TrainingError(
+                "runtime world_size does not match budget.expected_world_size"
+            )
         if config.distributed.enabled != self.distributed.enabled:
             raise TrainingError("distributed context does not match training config")
         if data_iterator.rank != self.distributed.rank:
@@ -149,7 +161,12 @@ class Trainer:
         self.device = self.distributed.device(config.runtime.device)
         self.model = model.to(device=self.device, dtype=torch.float32)
         if self.distributed.is_distributed:
-            ddp_options: dict[str, object] = {"broadcast_buffers": False}
+            ddp_options: dict[str, object] = {
+                "broadcast_buffers": False,
+                "bucket_cap_mb": config.runtime.ddp_bucket_cap_mb,
+                "gradient_as_bucket_view": True,
+                "static_graph": config.runtime.ddp_static_graph,
+            }
             if self.device.type == "cuda":
                 ddp_options.update(
                     device_ids=[self.distributed.local_rank],
@@ -203,16 +220,13 @@ class Trainer:
             raise TrainingError(
                 "trainer global_step does not match scheduler completed_steps"
             )
-        expected_samples = (
-            trainer_state.global_step
-            * self.config.batch.micro_batch_size
-            * self.config.batch.gradient_accumulation_steps
-            * self.distributed.world_size
+        expected_samples = self.config.batch.samples_through(
+            trainer_state.global_step,
+            self.distributed.world_size,
         )
-        expected_tokens = (
-            trainer_state.global_step
-            * self.config.batch.tokens_per_optimizer_step
-            * self.distributed.world_size
+        expected_tokens = self.config.batch.tokens_through(
+            trainer_state.global_step,
+            self.distributed.world_size,
         )
         if trainer_state.samples_seen != expected_samples:
             raise TrainingError("trainer samples_seen is incompatible with config")
@@ -248,18 +262,19 @@ class Trainer:
         start_tokens = self.tokens_seen
 
         for _ in range(steps):
+            accumulation_steps = self.config.batch.accumulation_steps_for_step(
+                self.scheduler.completed_steps
+            )
             learning_rate = self.scheduler.prepare_step()
             self.optimizer.zero_grad(set_to_none=True)
             losses: list[float] = []
-            for micro_step in range(self.config.batch.gradient_accumulation_steps):
+            for micro_step in range(accumulation_steps):
                 batch = self.data_iterator.next_batch().to(
                     self.device,
                     non_blocking=True,
                 )
                 with self._autocast():
-                    sync_gradients = (
-                        micro_step == self.config.batch.gradient_accumulation_steps - 1
-                    )
+                    sync_gradients = micro_step == accumulation_steps - 1
                     sync_context = (
                         nullcontext()
                         if sync_gradients
@@ -277,13 +292,14 @@ class Trainer:
                             checkpoint_segment_layers=(
                                 self.config.runtime.checkpoint_segment_layers
                             ),
+                            checkpoint_interval_segments=(
+                                self.config.runtime.checkpoint_interval_segments
+                            ),
                         )
                         if output.loss is None:
                             raise TrainingError("model did not return a training loss")
                         loss = output.loss
-                        (
-                            loss / self.config.batch.gradient_accumulation_steps
-                        ).backward()
+                        (loss / accumulation_steps).backward()
                 loss_value = float(loss.detach())
                 if not math.isfinite(loss_value):
                     raise TrainingError("training loss is not finite")
@@ -301,11 +317,12 @@ class Trainer:
             self._last_learning_rate = learning_rate
             self.samples_seen += (
                 self.config.batch.micro_batch_size
-                * self.config.batch.gradient_accumulation_steps
+                * accumulation_steps
                 * self.distributed.world_size
             )
             self.tokens_seen += (
-                self.config.batch.tokens_per_optimizer_step
+                self.config.batch.tokens_per_micro_batch
+                * accumulation_steps
                 * self.distributed.world_size
             )
             elapsed = time.perf_counter() - started
@@ -497,15 +514,12 @@ def train_with_checkpoints(
         next_boundary = ((current_step // save_every_steps) + 1) * save_every_steps
         segment_target = min(target_steps, next_boundary)
         segment_steps = segment_target - current_step
+        segment_start_tokens = trainer.tokens_seen
         result = trainer.train(segment_steps, on_step=on_step)
         metrics.extend(result.step_metrics)
         peak_allocated = max(peak_allocated, result.peak_allocated_gib)
         peak_reserved = max(peak_reserved, result.peak_reserved_gib)
-        processed_tokens += (
-            segment_steps
-            * trainer.config.batch.tokens_per_optimizer_step
-            * trainer.distributed.world_size
-        )
+        processed_tokens += result.trainer_state.tokens_seen - segment_start_tokens
         current_step = result.trainer_state.global_step
         if current_step % save_every_steps == 0 or current_step == target_steps:
             milestone = current_step == target_steps
@@ -573,6 +587,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Restore latest checkpoint from --run-id before training.",
     )
     parser.add_argument(
+        "--initialize-from",
+        type=Path,
+        help="Completed prior-stage checkpoint directory (not an exact resume).",
+    )
+    parser.add_argument(
         "--checkpoint-id",
         help="Restore this checkpoint ID instead of latest when --resume is set.",
     )
@@ -580,6 +599,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--checkpoint-every",
         type=int,
         help="Override checkpoint.save_every_steps from the training config.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Verify data lineage and the complete training budget without training.",
     )
     parser.add_argument("--project-root", type=Path, default=Path("."))
     return parser
@@ -631,6 +655,40 @@ def load_sharded_training_dataset(
     )
 
 
+def load_long_window_dataset(
+    data_directory: Path,
+    *,
+    distributed: DistributedContext,
+) -> LongWindowDataset:
+    """Verify a selected long-window view once and share its manifest."""
+    if not distributed.is_distributed:
+        return LongWindowDataset(data_directory)
+    dataset = None
+    outcome = None
+    if distributed.is_main_process:
+        try:
+            dataset = LongWindowDataset(data_directory)
+            outcome = {
+                "ok": True,
+                "manifest": dataset.manifest,
+                "manifest_sha256": dataset.manifest_sha256,
+            }
+        except BaseException as error:
+            outcome = {"ok": False, "error": f"{type(error).__name__}: {error}"}
+    outcome = distributed.broadcast_object(outcome)
+    if not outcome["ok"]:
+        raise TrainingError(
+            f"rank 0 long-window verification failed: {outcome['error']}"
+        )
+    if dataset is not None:
+        return dataset
+    return LongWindowDataset(
+        data_directory,
+        verified_manifest=outcome["manifest"],
+        manifest_sha256=outcome["manifest_sha256"],
+    )
+
+
 def _run_main(
     argv: list[str] | None,
     distributed: DistributedContext,
@@ -638,14 +696,28 @@ def _run_main(
     args = build_parser().parse_args(argv)
     if args.checkpoint_id is not None and not args.resume:
         raise TrainingError("--checkpoint-id requires --resume")
-    if distributed.is_distributed and args.run_id is None:
+    if args.resume and args.initialize_from is not None:
+        raise TrainingError("--resume and --initialize-from are mutually exclusive")
+    if distributed.is_distributed and args.run_id is None and not args.dry_run:
         raise TrainingError("distributed training requires --run-id")
     root = args.project_root.resolve()
     config = load_training_config(args.config, project_root=root)
+    if config.initialization is None and args.initialize_from is not None:
+        raise TrainingError("this stage does not accept --initialize-from")
+    if config.initialization is not None and not args.resume and not args.dry_run:
+        if args.initialize_from is None:
+            raise TrainingError("this stage requires --initialize-from")
     model_config = load_model_config(root / config.model.config_path)
     data_directory = root / args.training_data
-    raw_manifest = json.loads((data_directory / "manifest.json").read_text())
-    if raw_manifest.get("format_version") == "document-bos-eos-sharded-v2":
+    data_manifest_path = data_directory / "manifest.json"
+    raw_manifest = json.loads(data_manifest_path.read_text())
+    if (
+        config.data.dataset_manifest_sha256 is not None
+        and file_sha256(data_manifest_path) != config.data.dataset_manifest_sha256
+    ):
+        raise TrainingError("dataset manifest SHA-256 does not match config")
+    data_format = raw_manifest.get("format_version")
+    if data_format == "document-bos-eos-sharded-v2":
         dataset = load_sharded_training_dataset(
             data_directory,
             sequence_length=config.batch.sequence_length,
@@ -656,6 +728,16 @@ def _run_main(
             "split_manifest_sha256": config.data.split_sha256,
             "audit_manifest_sha256": config.data.data_manifest_sha256,
             "tokenizer_sha256": config.data.tokenizer_sha256,
+        }
+    elif data_format == "document-long-window-view-v1":
+        dataset = load_long_window_dataset(
+            data_directory,
+            distributed=distributed,
+        )
+        identity = dataset.manifest["dataset_manifest_identity"]
+        expected_identity = {
+            "name": config.data.data_version_id,
+            "window_length": config.batch.sequence_length,
         }
     else:
         dataset = PackedTokenDataset(data_directory)
@@ -682,10 +764,63 @@ def _run_main(
         != config.data.formal_training_eligible
     ):
         raise TrainingError("packed-data training eligibility does not match config")
+    if config.budget is not None:
+        budget = config.budget
+        actual_candidates = (
+            raw_manifest.get("candidate_count")
+            if data_format == "document-long-window-view-v1"
+            else len(dataset)
+        )
+        if actual_candidates != budget.available_candidate_samples:
+            raise TrainingError("dataset candidate count does not match budget")
+        if len(dataset) < budget.expected_training_samples:
+            raise TrainingError("dataset has fewer selected samples than budget")
+        if (
+            config.batch.samples_through(
+                config.scheduler.total_steps,
+                distributed.world_size,
+            )
+            != budget.expected_training_samples
+        ):
+            raise TrainingError("runtime sample budget does not match configuration")
+
+    if args.dry_run:
+        if distributed.is_main_process:
+            budget = config.budget
+            summary = {
+                "stage": None if budget is None else budget.stage,
+                "dataset_id": dataset.dataset_id,
+                "dataset_manifest_sha256": dataset.manifest_sha256,
+                "world_size": distributed.world_size,
+                "sequence_length": config.batch.sequence_length,
+                "micro_batch_size": config.batch.micro_batch_size,
+                "gradient_accumulation_schedule": (
+                    list(config.batch.gradient_accumulation_schedule)
+                    or [config.batch.gradient_accumulation_steps]
+                ),
+                "global_tokens_per_step": (
+                    None if budget is None else list(budget.expected_tokens_per_step)
+                ),
+                "total_steps": config.scheduler.total_steps,
+                "expected_total_tokens": (
+                    None if budget is None else budget.expected_total_tokens
+                ),
+                "available_candidate_samples": actual_candidates
+                if budget is not None
+                else len(dataset),
+                "coverage_ratio": (
+                    None
+                    if budget is None
+                    else budget.expected_training_samples
+                    / budget.available_candidate_samples
+                ),
+            }
+            print(json.dumps(summary, sort_keys=True))
+        return 0
 
     set_seed(config.seed + distributed.rank)
     model = AtomLLM(model_config)
-    if isinstance(dataset, ShardedTokenDataset):
+    if isinstance(dataset, (ShardedTokenDataset, LongWindowDataset)):
         iterator = ResumableShardedBatchIterator(
             dataset,
             batch_size=config.batch.micro_batch_size,
@@ -702,6 +837,19 @@ def _run_main(
             world_size=distributed.world_size,
         )
     trainer = Trainer(model, config, iterator, distributed)
+    initialized_manifest = None
+    if args.initialize_from is not None:
+        from atomllm.training.checkpoint import initialize_from_training_checkpoint
+
+        initialization = config.initialization
+        assert initialization is not None
+        initialized_manifest = initialize_from_training_checkpoint(
+            trainer,
+            root / args.initialize_from,
+            expected_config_sha256=initialization.source_config_sha256,
+            expected_final_step=initialization.source_final_step,
+            load_optimizer_state=initialization.load_optimizer_state,
+        )
     steps = args.steps if args.steps is not None else config.scheduler.total_steps
 
     project_config = ProjectConfig(
@@ -723,6 +871,24 @@ def _run_main(
         run = _open_existing_run(project_config.output_dir, args.run_id)
     if not args.resume and distributed.is_main_process:
         shutil.copy2(args.config, run.run_dir / "training-config.yaml")
+        if initialized_manifest is not None:
+            (run.run_dir / "stage-initialization.json").write_text(
+                json.dumps(
+                    {
+                        "source_checkpoint": str(args.initialize_from),
+                        "source_checkpoint_id": initialized_manifest["checkpoint_id"],
+                        "source_checkpoint_manifest_sha256": file_sha256(
+                            root / args.initialize_from / "manifest.json"
+                        ),
+                        "source_config_sha256": initialized_manifest["config_sha256"],
+                        "target_config_sha256": file_sha256(root / args.config),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
     distributed.barrier()
 
     from atomllm.training.checkpoint import (
@@ -763,6 +929,10 @@ def _run_main(
                 config.batch.tokens_per_optimizer_step * distributed.world_size
             ),
             start_step=trainer.trainer_state().global_step,
+            total_tokens=(
+                None if config.budget is None else config.budget.expected_total_tokens
+            ),
+            start_tokens=trainer.tokens_seen,
             prior_elapsed_seconds=trainer.elapsed_training_seconds,
             log_every_steps=config.monitoring.log_every_steps,
             flush_every_steps=config.monitoring.flush_every_steps,
@@ -800,17 +970,29 @@ def _run_main(
         f"training-report-{datetime.now():%Y%m%d-%H%M%S}.json"
     )
     report = asdict(result)
+    accumulation_schedule = config.batch.gradient_accumulation_schedule or (
+        config.batch.gradient_accumulation_steps,
+    )
     report["distributed"] = {
         "world_size": distributed.world_size,
-        "global_batch_size": (
-            config.batch.micro_batch_size
-            * config.batch.gradient_accumulation_steps
-            * distributed.world_size
-        ),
-        "tokens_per_optimizer_step": (
-            config.batch.tokens_per_optimizer_step * distributed.world_size
-        ),
+        "gradient_accumulation_schedule": list(accumulation_schedule),
+        "global_batch_size_schedule": [
+            config.batch.micro_batch_size * steps * distributed.world_size
+            for steps in accumulation_schedule
+        ],
+        "tokens_per_optimizer_step_schedule": [
+            config.batch.tokens_per_micro_batch * steps * distributed.world_size
+            for steps in accumulation_schedule
+        ],
     }
+    report["stage_initialization"] = (
+        None
+        if initialized_manifest is None
+        else {
+            "source_checkpoint_id": initialized_manifest["checkpoint_id"],
+            "source_config_sha256": initialized_manifest["config_sha256"],
+        }
+    )
     report_path.write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )

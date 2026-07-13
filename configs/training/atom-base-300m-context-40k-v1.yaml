@@ -1,7 +1,6 @@
 schema_version: 1
-name: atom-base-300m-long-v1
-# Historical all-40K plan; superseded by the A/B/C stage-specific configs.
-status: smoke
+name: atom-base-300m-context-40k-v1
+status: release
 seed: 42
 model:
   config_path: configs/model/atom-base-300m-long-v1.yaml
@@ -9,8 +8,9 @@ model:
   name: atom-base-300m-long-v1
   expected_parameter_count: 303350784
 data:
-  data_version_id: formal-70g-audit-v1
+  data_version_id: formal-long-40k-v1
   data_manifest_sha256: 6489228304dd55c1beab33cbabccda958792bb25601bd92d5cdab6a115312ba5
+  dataset_manifest_sha256: c59aa7f23c1b0f8afc94cd9301c0f69c681859bbd15a1e279c56b807e29afd49
   split: train
   split_sha256: c93480d9e03ebaa7a30cbf68541064cca045f33441c19cb9ef2e545d2e12dd6d
   tokenizer_version_id: tokenizer-version-atom-tokenizer-formal-v1-936e948b3509
@@ -22,22 +22,23 @@ batch:
   gradient_accumulation_steps: 1
 optimizer:
   name: adamw
-  learning_rate: 0.0002
+  learning_rate: 0.00001
   beta1: 0.9
   beta2: 0.95
   epsilon: 1.0e-08
   weight_decay: 0.0
 scheduler:
   name: constant
-  warmup_steps: 4896
-  total_steps: 24416
+  warmup_steps: 1
+  total_steps: 1527
   minimum_learning_rate_ratio: 0.1
 stability:
   max_gradient_norm: 0.5
   reject_non_finite_loss: true
   reject_non_finite_gradient_norm: true
 checkpoint:
-  save_every_steps: 4
+  # About 17 minutes of work at the measured throughput.
+  save_every_steps: 250
   keep_last: 3
   exact_resume: true
   model_format: safetensors
@@ -49,12 +50,32 @@ runtime:
   device: cuda
   precision: bf16
   gradient_checkpointing: true
-  checkpoint_segment_layers: 4
-  loss_chunk_size: 256
+  checkpoint_segment_layers: 1
+  checkpoint_interval_segments: 5
+  loss_chunk_size: 8192
+  ddp_bucket_cap_mb: 200
+  ddp_static_graph: true
   compile_model: false
   deterministic: true
 monitoring:
   enabled: true
   tensorboard: true
-  log_every_steps: 1
-  flush_every_steps: 1
+  log_every_steps: 5
+  flush_every_steps: 5
+distributed:
+  enabled: true
+  backend: nccl
+budget:
+  stage: C
+  expected_world_size: 8
+  expected_tokens_per_step: [327680]
+  expected_training_samples: 12216
+  expected_total_tokens: 500367360
+  available_candidate_samples: 15382
+  minimum_coverage_ratio: 0.79
+initialization:
+  source_stage: B
+  source_config_path: configs/training/atom-base-300m-context-20k-v1.yaml
+  source_config_sha256: 9270ec54decc75f8bc19cd24b5b58a5b802b98e5a195008ea9fd8c3da5876b6a
+  source_final_step: 1221
+  load_optimizer_state: true

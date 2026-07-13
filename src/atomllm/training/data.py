@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from bisect import bisect_right
 from pathlib import Path
@@ -13,6 +14,7 @@ import torch
 
 from atomllm.training.packing import TOKEN_FILE_NAME, verify_packed_dataset
 from atomllm.training.formal_token_shards import verify_formal_token_shards
+from atomllm.training.long_window_views import verify_long_window_view
 from atomllm.training.state import DataState
 
 
@@ -255,12 +257,89 @@ class ShardedTokenDataset:
         return torch.from_numpy(np.array(tokens, dtype=np.int64))
 
 
+class LongWindowDataset:
+    """Read selected document-internal windows from their source token shards."""
+
+    def __init__(
+        self,
+        directory: str | Path,
+        *,
+        verified_manifest: dict[str, Any] | None = None,
+        manifest_sha256: str | None = None,
+    ) -> None:
+        self.directory = Path(directory)
+        manifest_path = self.directory / "manifest.json"
+        if verified_manifest is None:
+            if manifest_sha256 is not None:
+                raise ValueError("manifest_sha256 requires a verified_manifest")
+            self.manifest = verify_long_window_view(self.directory)
+        else:
+            if not isinstance(manifest_sha256, str):
+                raise ValueError("verified_manifest requires manifest_sha256")
+            if (
+                hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+                != manifest_sha256
+            ):
+                raise TrainingDataError(
+                    "broadcast long-window manifest does not match local storage"
+                )
+            self.manifest = verified_manifest
+        self.dataset_id = self.manifest["dataset_id"]
+        self.manifest_sha256 = (
+            manifest_sha256
+            if manifest_sha256 is not None
+            else hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        )
+        self.sequence_length = self.manifest["window_length"]
+        self.block_count = self.manifest["selected_count"]
+        self._windows = self.manifest["windows"]
+        source_dir = (self.directory / self.manifest["source_directory"]).resolve()
+        source_manifest = json.loads(
+            (source_dir / "manifest.json").read_text(encoding="utf-8")
+        )
+        self._tokens = [
+            np.memmap(
+                source_dir / shard["token_file"]["name"],
+                mode="r",
+                dtype="<u2",
+                shape=(shard["token_count"],),
+            )
+            for shard in source_manifest["shards"]
+        ]
+        # ResumableShardedBatchIterator records a location for the next sample.
+        # A view is one virtual shard; the source location remains in its manifest.
+        self.manifest = {
+            **self.manifest,
+            "shards": [{"token_file": {"name": "selected-windows"}}],
+        }
+
+    def __len__(self) -> int:
+        return self.block_count
+
+    def locate(self, index: int) -> tuple[int, int]:
+        if type(index) is not int:
+            raise TypeError("dataset index must be an integer")
+        if not 0 <= index < self.block_count:
+            raise IndexError("dataset index is out of range")
+        return 0, index
+
+    def __getitem__(self, index: int) -> torch.Tensor:
+        self.locate(index)
+        window = self._windows[index]
+        start = window["source_token_offset"]
+        end = start + self.sequence_length
+        tokens = self._tokens[window["source_shard_index"]][start:end]
+        if len(tokens) != self.sequence_length:
+            raise TrainingDataError("long-window source slice is truncated")
+        return torch.from_numpy(np.array(tokens, dtype=np.int64))
+
+
 class ResumableShardedBatchIterator:
     """O(1)-memory deterministic permutation and resumable batch cursor."""
 
     def __init__(
         self,
-        dataset: ShardedTokenDataset,
+        dataset: ShardedTokenDataset | LongWindowDataset,
         *,
         batch_size: int,
         seed: int,

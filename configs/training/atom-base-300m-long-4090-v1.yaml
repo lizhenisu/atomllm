@@ -1,6 +1,8 @@
 schema_version: 1
 name: atom-base-300m-long-4090-v1
-status: release
+# Historical all-40K performance probe. The official A/B/C route uses the three
+# stage-specific configs; this file must not be used for release training.
+status: smoke
 seed: 42
 model:
   config_path: configs/model/atom-base-300m-long-v1.yaml
@@ -39,9 +41,8 @@ stability:
   reject_non_finite_loss: true
   reject_non_finite_gradient_norm: true
 checkpoint:
-  # Checkpoint写盘造成明显停顿时可提高到32或64；间隔越大，异常中断时重算越多。
-  # 该值必须整除scheduler.total_steps。
-  save_every_steps: 16
+  # 降低Checkpoint写盘停顿；训练器仍会强制保存最终Step。
+  save_every_steps: 200
   keep_last: 3
   exact_resume: true
   model_format: safetensors
@@ -58,17 +59,23 @@ runtime:
   # 设为1表示只逐层重算，比4060使用的层级式4层分组更快。
   # 显存紧张时才增大到2或4；更大的值会增加嵌套重计算开销。
   checkpoint_segment_layers: 1
+  # 8x4090实测：每5层保留一个激活边界，其余层重计算。配合8K loss
+  # chunk峰值约20.1GiB；设为4会在40K反向阶段OOM。
+  checkpoint_interval_segments: 5
   # 显存充足时可依次尝试4096和8192，减少LM Head/Cross Entropy分块循环；
   # 数值越大峰值显存越高，完整40960不建议直接使用。
-  loss_chunk_size: 2048
-  # 当前训练器尚未实现torch.compile，必须保持false。
+  loss_chunk_size: 8192
+  # 当前训练图实测compile慢于eager，保持false。
   compile_model: false
   # 改为false可能提高部分算子吞吐，但会放弃严格可复现性；正式训练默认保留true。
   deterministic: true
 monitoring:
   enabled: true
   tensorboard: true
-  log_every_steps: 1
+  log_every_steps: 10
   # 若TensorBoard和JSONL刷新影响吞吐，可提高到10；异常退出时最多丢失尚未Flush的监控记录，
   # 不影响模型Checkpoint和训练恢复。
-  flush_every_steps: 1
+  flush_every_steps: 10
+distributed:
+  enabled: true
+  backend: nccl

@@ -40,6 +40,8 @@ class TrainingMonitor:
         total_steps: int,
         tokens_per_step: int,
         start_step: int,
+        total_tokens: int | None = None,
+        start_tokens: int = 0,
         prior_elapsed_seconds: float = 0.0,
         log_every_steps: int = 1,
         flush_every_steps: int = 1,
@@ -49,6 +51,12 @@ class TrainingMonitor:
             raise ValueError("monitoring totals must be positive")
         if not 0 <= start_step <= total_steps:
             raise ValueError("monitoring start_step is outside the schedule")
+        if total_tokens is not None and total_tokens <= 0:
+            raise ValueError("monitoring total_tokens must be positive")
+        if start_tokens < 0 or (
+            total_tokens is not None and start_tokens > total_tokens
+        ):
+            raise ValueError("monitoring start_tokens is outside the budget")
         if log_every_steps <= 0 or flush_every_steps <= 0:
             raise ValueError("monitoring intervals must be positive")
         self.log_dir = Path(log_dir)
@@ -56,6 +64,8 @@ class TrainingMonitor:
         self.total_steps = total_steps
         self.tokens_per_step = tokens_per_step
         self.start_step = start_step
+        self.total_tokens = total_tokens
+        self.start_tokens = start_tokens
         self.prior_elapsed_seconds = prior_elapsed_seconds
         self.log_every_steps = log_every_steps
         self.flush_every_steps = flush_every_steps
@@ -81,14 +91,14 @@ class TrainingMonitor:
         step_seconds = (now - self.last_event_at) / max(advanced_steps, 1)
         process_elapsed = now - self.started
         elapsed = self.prior_elapsed_seconds + process_elapsed
-        process_steps = max(step - self.start_step, 1)
-        tokens_per_second = (
-            process_steps * self.tokens_per_step / max(process_elapsed, 1e-12)
-        )
-        remaining_steps = max(self.total_steps - step, 0)
-        eta_seconds = (
-            remaining_steps * self.tokens_per_step / max(tokens_per_second, 1e-12)
-        )
+        tokens_seen = int(getattr(metric, "tokens_seen"))
+        process_tokens = max(tokens_seen - self.start_tokens, 0)
+        tokens_per_second = process_tokens / max(process_elapsed, 1e-12)
+        if self.total_tokens is None:
+            remaining_tokens = max(self.total_steps - step, 0) * self.tokens_per_step
+        else:
+            remaining_tokens = max(self.total_tokens - tokens_seen, 0)
+        eta_seconds = remaining_tokens / max(tokens_per_second, 1e-12)
         if torch.cuda.is_available():
             allocated = torch.cuda.memory_allocated() / 1024**3
             reserved = torch.cuda.memory_reserved() / 1024**3
@@ -101,7 +111,7 @@ class TrainingMonitor:
             gradient_norm=float(getattr(metric, "gradient_norm")),
             learning_rate=float(getattr(metric, "learning_rate")),
             samples_seen=int(getattr(metric, "samples_seen")),
-            tokens_seen=int(getattr(metric, "tokens_seen")),
+            tokens_seen=tokens_seen,
             tokens_per_second=tokens_per_second,
             step_seconds=step_seconds,
             elapsed_seconds=elapsed,

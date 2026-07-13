@@ -71,7 +71,13 @@ class AtomLLM(nn.Module):
             raise TypeError("input_ids must use int32 or int64 dtype")
         if input_ids.shape[1] <= 0:
             raise ValueError("input sequence length must be positive")
-        if input_ids.min().item() < 0 or input_ids.max().item() >= self.vocab_size:
+        values_are_valid = torch.all((input_ids >= 0) & (input_ids < self.vocab_size))
+        if input_ids.device.type == "cuda":
+            torch._assert_async(
+                values_are_valid,
+                f"input_ids must be in [0, {self.vocab_size})",
+            )
+        elif not values_are_valid.item():
             raise ValueError(f"input_ids must be in [0, {self.vocab_size})")
 
     def _validate_cache(
@@ -107,7 +113,13 @@ class AtomLLM(nn.Module):
             raise ValueError("at least two tokens are required to calculate loss")
         valid_labels = labels == -100
         in_vocabulary = (labels >= 0) & (labels < self.vocab_size)
-        if not torch.all(valid_labels | in_vocabulary).item():
+        labels_are_valid = torch.all(valid_labels | in_vocabulary)
+        if labels.device.type == "cuda":
+            torch._assert_async(
+                labels_are_valid,
+                f"labels must be -100 or in [0, {self.vocab_size})",
+            )
+        elif not labels_are_valid.item():
             raise ValueError(f"labels must be -100 or in [0, {self.vocab_size})")
 
         effective_labels = labels.clone()
@@ -123,7 +135,10 @@ class AtomLLM(nn.Module):
             )
         shift_logits = logits[:, :-1].float().contiguous()
         shift_labels = effective_labels[:, 1:].contiguous()
-        if not torch.any(shift_labels != -100).item():
+        has_targets = torch.any(shift_labels != -100)
+        if labels.device.type == "cuda":
+            torch._assert_async(has_targets, "loss has no valid next-token targets")
+        elif not has_targets.item():
             raise ValueError("loss has no valid next-token targets")
         return functional.cross_entropy(
             shift_logits.view(-1, self.vocab_size),
@@ -149,7 +164,13 @@ class AtomLLM(nn.Module):
             raise ValueError("at least two tokens are required to calculate loss")
         ignored = labels == -100
         in_vocabulary = (labels >= 0) & (labels < self.vocab_size)
-        if not torch.all(ignored | in_vocabulary).item():
+        labels_are_valid = torch.all(ignored | in_vocabulary)
+        if labels.device.type == "cuda":
+            torch._assert_async(
+                labels_are_valid,
+                f"labels must be -100 or in [0, {self.vocab_size})",
+            )
+        elif not labels_are_valid.item():
             raise ValueError(f"labels must be -100 or in [0, {self.vocab_size})")
         effective = labels.clone()
         effective[effective == self.pad_token_id] = -100
@@ -162,7 +183,10 @@ class AtomLLM(nn.Module):
                 ~attention_mask.to(device=device, dtype=torch.bool),
                 -100,
             )
-        if not torch.any(effective[:, 1:] != -100).item():
+        has_targets = torch.any(effective[:, 1:] != -100)
+        if labels.device.type == "cuda":
+            torch._assert_async(has_targets, "loss has no valid next-token targets")
+        elif not has_targets.item():
             raise ValueError("loss has no valid next-token targets")
         return effective
 
@@ -222,6 +246,7 @@ class AtomLLM(nn.Module):
         loss_chunk_size: int | None = None,
         gradient_checkpointing: bool = False,
         checkpoint_segment_layers: int = 1,
+        checkpoint_interval_segments: int = 1,
     ) -> CausalLMOutput:
         self._validate_input_ids(input_ids)
         if labels is not None and past_key_values is not None:
@@ -232,11 +257,18 @@ class AtomLLM(nn.Module):
             )
         if type(checkpoint_segment_layers) is not int or checkpoint_segment_layers <= 0:
             raise ValueError("checkpoint_segment_layers must be a positive integer")
+        if (
+            type(checkpoint_interval_segments) is not int
+            or checkpoint_interval_segments <= 0
+        ):
+            raise ValueError("checkpoint_interval_segments must be a positive integer")
         layer_caches = self._validate_cache(past_key_values)
         hidden_states = self.token_embeddings(input_ids)
         next_caches: list[KVCache] = []
         if gradient_checkpointing:
-            for start in range(0, self.num_layers, checkpoint_segment_layers):
+            for segment_index, start in enumerate(
+                range(0, self.num_layers, checkpoint_segment_layers)
+            ):
                 segment = tuple(self.layers[start : start + checkpoint_segment_layers])
 
                 def segment_forward(
@@ -244,40 +276,27 @@ class AtomLLM(nn.Module):
                     current_segment: tuple[TransformerBlock, ...] = segment,
                 ) -> torch.Tensor:
                     for current_layer in current_segment:
-                        if len(current_segment) == 1:
-                            states = current_layer(
-                                states,
-                                attention_mask=attention_mask,
-                                past_key_value=None,
-                                use_cache=False,
-                            )[0]
-                        else:
-
-                            def layer_forward(
-                                layer_states: torch.Tensor,
-                                layer: TransformerBlock = current_layer,
-                            ) -> torch.Tensor:
-                                return layer(
-                                    layer_states,
-                                    attention_mask=attention_mask,
-                                    past_key_value=None,
-                                    use_cache=False,
-                                )[0]
-
-                            states = checkpoint(
-                                layer_forward,
-                                states,
-                                use_reentrant=False,
-                                preserve_rng_state=True,
-                            )
+                        states = current_layer(
+                            states,
+                            attention_mask=attention_mask,
+                            past_key_value=None,
+                            use_cache=False,
+                        )[0]
                     return states
 
-                hidden_states = checkpoint(
-                    segment_forward,
-                    hidden_states,
-                    use_reentrant=False,
-                    preserve_rng_state=True,
+                checkpoint_segment = (
+                    checkpoint_interval_segments == 1
+                    or (segment_index + 1) % checkpoint_interval_segments != 0
                 )
+                if checkpoint_segment:
+                    hidden_states = checkpoint(
+                        segment_forward,
+                        hidden_states,
+                        use_reentrant=False,
+                        preserve_rng_state=True,
+                    )
+                else:
+                    hidden_states = segment_forward(hidden_states)
         else:
             for layer, layer_cache in zip(
                 self.layers,

@@ -26,6 +26,8 @@ def test_loads_bound_atom_5m_baseline() -> None:
     assert not config.data.formal_training_eligible
     assert config.checkpoint.exact_resume
     assert config.runtime.loss_chunk_size is None
+    assert config.runtime.ddp_bucket_cap_mb == 25
+    assert not config.runtime.ddp_static_graph
     assert config.monitoring.enabled
     assert config.monitoring.tensorboard
     assert config.monitoring.log_every_steps == 1
@@ -41,6 +43,43 @@ def test_loads_distributed_training_config() -> None:
     assert config.scheduler.total_steps == 61865
     assert config.scheduler.warmup_steps == 816
     assert config.checkpoint.save_every_steps == 50
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "configs/training/atom-base-300m-main-4k-v1.yaml",
+        "configs/training/atom-base-300m-context-20k-v1.yaml",
+        "configs/training/atom-base-300m-context-40k-v1.yaml",
+    ],
+)
+def test_loads_release_ddp_performance_settings(path: str) -> None:
+    config = load_training_config(path)
+
+    assert config.runtime.ddp_bucket_cap_mb == 200
+    assert config.runtime.ddp_static_graph
+
+
+def test_batch_accumulation_schedule_has_exact_cumulative_budget() -> None:
+    config = load_training_config(TRAINING_CONFIG)
+    batch = config.batch
+    scheduled = type(batch)(
+        sequence_length=4096,
+        micro_batch_size=2,
+        gradient_accumulation_steps=4,
+        gradient_accumulation_schedule=(3, 4, 4, 4),
+    )
+
+    assert [scheduled.accumulation_steps_for_step(step) for step in range(5)] == [
+        3,
+        4,
+        4,
+        4,
+        3,
+    ]
+    assert scheduled.micro_steps_through(4) == 15
+    assert scheduled.samples_through(4, 8) == 240
+    assert scheduled.tokens_through(4, 8) == 983_040
 
 
 def test_loads_explicit_one_variable_atom_5m_matrix() -> None:

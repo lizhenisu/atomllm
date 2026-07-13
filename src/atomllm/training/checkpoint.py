@@ -756,3 +756,53 @@ def restore_training_checkpoint(
     trainer.restore_state(trainer_state, data_state)
     restore_rng_state(rng_state)
     return manifest
+
+
+def initialize_from_training_checkpoint(
+    trainer: Trainer,
+    checkpoint_directory: str | Path,
+    *,
+    expected_config_sha256: str,
+    expected_final_step: int,
+    load_optimizer_state: bool,
+) -> dict[str, Any]:
+    """Initialize a new stage without importing its scheduler or data cursor."""
+    if _SHA256_PATTERN.fullmatch(expected_config_sha256) is None:
+        raise ValueError("expected_config_sha256 must be 64 lowercase hex digits")
+    if type(expected_final_step) is not int or expected_final_step <= 0:
+        raise ValueError("expected_final_step must be a positive integer")
+    if type(load_optimizer_state) is not bool:
+        raise TypeError("load_optimizer_state must be a boolean")
+    checkpoint_dir = Path(checkpoint_directory)
+    manifest = verify_checkpoint_directory(checkpoint_dir)
+    mismatches = []
+    if manifest["config_sha256"] != expected_config_sha256:
+        mismatches.append("config_sha256")
+    if manifest["global_step"] != expected_final_step:
+        mismatches.append("global_step")
+    if manifest["milestone"] is not True:
+        mismatches.append("milestone")
+    if manifest["model_signature"] != model_signature(trainer):
+        mismatches.append("model_signature")
+    if manifest["tokenizer_sha256"] != trainer.config.data.tokenizer_sha256:
+        mismatches.append("tokenizer_sha256")
+    if mismatches:
+        raise CheckpointError(
+            "stage initialization checkpoint is incompatible: "
+            + ", ".join(sorted(mismatches))
+        )
+    load_safetensors_checkpoint(trainer.model, checkpoint_dir / "model.safetensors")
+    if load_optimizer_state:
+        optimizer_state = torch.load(
+            checkpoint_dir / "optimizer.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
+        trainer.optimizer.load_state_dict(optimizer_state)
+        del optimizer_state
+        if trainer.device.type == "cuda":
+            torch.cuda.empty_cache()
+    # The new stage owns its scheduler, counters, data permutation, and RNG.
+    # prepare_step() will restore the new configured base LR even when Adam
+    # moments were carried across the boundary.
+    return manifest

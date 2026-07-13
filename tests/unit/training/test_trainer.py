@@ -96,6 +96,31 @@ def test_trainer_updates_counters_metrics_and_data_cursor(
     assert result.tokens_per_second > 0
 
 
+def test_trainer_uses_per_step_accumulation_schedule(
+    packed_dataset_dir: Path,
+) -> None:
+    dataset = PackedTokenDataset(packed_dataset_dir)
+    config = tiny_training_config(micro_batch_size=2, accumulation_steps=2)
+    config = replace(
+        config,
+        batch=replace(
+            config.batch,
+            gradient_accumulation_schedule=(1, 2),
+        ),
+    )
+    trainer = Trainer(
+        tiny_model(),
+        config,
+        ResumableBatchIterator(dataset, batch_size=2, seed=config.seed),
+    )
+
+    result = trainer.train(2)
+
+    assert result.trainer_state.samples_seen == 6
+    assert result.trainer_state.tokens_seen == 24
+    assert result.data_state.sample_index == 6
+
+
 def test_gradient_accumulation_matches_one_combined_batch(
     packed_dataset_dir: Path,
 ) -> None:
