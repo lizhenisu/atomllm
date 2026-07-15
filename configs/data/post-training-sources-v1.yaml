@@ -1,0 +1,104 @@
+schema_version: 1
+snapshot_id: atom-post-training-sources-v1
+output_root: artifacts/post-training-data/raw
+manifest_path: artifacts/post-training-data/download-manifest-v1.json
+
+datasets:
+  - repo_id: OpenAssistant/oasst1
+    revision: fdf72ae0827c1cda404aff25b6603abec9e3399b
+    stages: [8]
+    local_dir: stage8-sft/OpenAssistant--oasst1
+    license: apache-2.0
+    expected_files: 11
+    expected_bytes: 231507594
+    allow_patterns: []
+
+  - repo_id: HuggingFaceH4/ultrachat_200k
+    revision: 8049631c405ae6576f93f445c6b8166f76f5505a
+    stages: [8]
+    local_dir: stage8-sft/HuggingFaceH4--ultrachat_200k
+    license: mit
+    expected_files: 10
+    expected_bytes: 1624055929
+    allow_patterns: []
+
+  - repo_id: BAAI/COIG
+    revision: 9f25758ec94f82762fb9c09a5c60e908cfb83632
+    stages: [8]
+    local_dir: stage8-sft/BAAI--COIG
+    license: apache-2.0
+    expected_files: 10
+    expected_bytes: 338160484
+    allow_patterns: []
+
+  - repo_id: open-r1/OpenR1-Math-220k
+    revision: e4e141ec9dea9f8326f4d347be56105859b2bd68
+    stages: [9, 12]
+    local_dir: stage9-reasoning/open-r1--OpenR1-Math-220k
+    license: apache-2.0
+    expected_files: 12
+    expected_bytes: 2149905506
+    allow_patterns: [data/*, README.md, .gitattributes]
+
+  - repo_id: zake7749/OpenScience-Chinese-Reasoning-SFT
+    revision: e9415e58dfe9f202fef09da118fe649eb93a5683
+    stages: [9]
+    local_dir: stage9-reasoning/zake7749--OpenScience-Chinese-Reasoning-SFT
+    license: cc-by-4.0
+    expected_files: 3
+    expected_bytes: 289784206
+    allow_patterns: []
+
+  - repo_id: agentica-org/DeepScaleR-Preview-Dataset
+    revision: b6ae8c60f5c1f2b594e2140b91c49c9ad0949e29
+    stages: [9, 12]
+    local_dir: stage9-reasoning/agentica-org--DeepScaleR-Preview-Dataset
+    license: mit
+    expected_files: 3
+    expected_bytes: 21483669
+    allow_patterns: []
+
+  - repo_id: Anthropic/hh-rlhf
+    revision: 09be8c5bbc57cb3887f3a9732ad6aa7ec602a1fa
+    stages: [10, 11]
+    local_dir: stage10-11-preference/Anthropic--hh-rlhf
+    license: mit
+    expected_files: 11
+    expected_bytes: 94745957
+    allow_patterns: []
+
+  - repo_id: nvidia/HelpSteer2
+    revision: 990b2711a36180dd19d9c94b8627844866f8982a
+    stages: [10, 11]
+    local_dir: stage10-11-preference/nvidia--HelpSteer2
+    license: cc-by-4.0
+    expected_files: 6
+    expected_bytes: 40632942
+    allow_patterns: []
+
+  - repo_id: HuggingFaceH4/ultrafeedback_binarized
+    revision: 3949bf5f8c17c394422ccfab0c31ea9c20bdeb85
+    stages: [10, 11]
+    local_dir: stage10-11-preference/HuggingFaceH4--ultrafeedback_binarized
+    license: mit
+    expected_files: 9
+    expected_bytes: 649980296
+    allow_patterns: []
+
+  - repo_id: m-a-p/COIG-P
+    revision: f18e147f99abafd7f56aa389a030b49e782a3456
+    stages: [10, 11]
+    local_dir: stage10-11-preference/m-a-p--COIG-P
+    license: null
+    expected_files: 11
+    expected_bytes: 802526591
+    allow_patterns: []
+
+  - repo_id: agentica-org/DeepCoder-Preview-Dataset
+    revision: 177913a7bd43791646ef6a43645caa3c871ab3db
+    stages: [12]
+    local_dir: stage12-grpo/agentica-org--DeepCoder-Preview-Dataset
+    license: mit
+    expected_files: 31
+    expected_bytes: 7811998710
+    allow_patterns: []
