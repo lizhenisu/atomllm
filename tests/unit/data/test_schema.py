@@ -154,6 +154,15 @@ def test_document_jsonl_round_trip_preserves_unicode() -> None:
     assert restored.text == "合成示例文本。"
 
 
+def test_code_language_contract_is_accepted() -> None:
+    raw_document = valid_document()
+    raw_document["language"] = "code"
+
+    document = CanonicalDocument.from_mapping(raw_document)
+
+    assert document.language == "code"
+
+
 def test_privacy_warning_is_accepted_not_rejected() -> None:
     raw_document = valid_document()
     raw_document["privacy_warnings"] = ["email", "phone"]

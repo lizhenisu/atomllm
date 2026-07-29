@@ -4,7 +4,11 @@ from pathlib import Path
 import pytest
 import torch
 
-from atomllm.model.attention import GroupedQueryAttention, KVCache
+from atomllm.model.attention import (
+    GroupedQueryAttention,
+    KVCache,
+    build_segment_attention_mask,
+)
 from atomllm.model.config import load_model_config
 
 
@@ -104,6 +108,30 @@ def test_padding_mask_blocks_masked_keys_and_zeros_masked_queries() -> None:
     torch.testing.assert_close(
         original_output[:, 1],
         torch.zeros_like(original_output[:, 1]),
+    )
+
+
+def test_segment_attention_blocks_previous_packed_conversations() -> None:
+    attention = make_attention()
+    original = torch.randn(1, 6, 32)
+    changed = original.clone()
+    changed[:, :3] = torch.randn_like(changed[:, :3]) * 100
+    segment_mask = build_segment_attention_mask(torch.tensor([[1, 1, 1, 2, 2, 2]]))
+
+    original_output, _ = attention(
+        original,
+        segment_attention_mask=segment_mask,
+    )
+    changed_output, _ = attention(
+        changed,
+        segment_attention_mask=segment_mask,
+    )
+
+    torch.testing.assert_close(
+        original_output[:, 3:],
+        changed_output[:, 3:],
+        rtol=1e-5,
+        atol=1e-5,
     )
 
 

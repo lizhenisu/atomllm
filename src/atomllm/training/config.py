@@ -341,25 +341,35 @@ class SchedulerConfig:
     warmup_steps: int
     total_steps: int
     minimum_learning_rate_ratio: float
+    cooldown_steps: int = 0
 
     @classmethod
     def from_mapping(cls, value: Any) -> SchedulerConfig:
         data = _mapping(value, "scheduler")
-        _exact_keys(
-            data,
-            {
-                "name",
-                "warmup_steps",
-                "total_steps",
-                "minimum_learning_rate_ratio",
-            },
-            "scheduler",
-        )
+        required = {
+            "name",
+            "warmup_steps",
+            "total_steps",
+            "minimum_learning_rate_ratio",
+        }
+        missing = sorted(required - set(data))
+        unknown = sorted(set(data) - required - {"cooldown_steps"})
+        if missing:
+            raise TrainingConfigError(
+                f"scheduler missing required fields: {', '.join(missing)}"
+            )
+        if unknown:
+            raise TrainingConfigError(
+                f"scheduler has unknown fields: {', '.join(unknown)}"
+            )
         if not isinstance(data["name"], str) or data["name"] not in {
             "cosine",
             "constant",
+            "trapezoidal",
         }:
-            raise TrainingConfigError("scheduler.name must be 'cosine' or 'constant'")
+            raise TrainingConfigError(
+                "scheduler.name must be 'cosine', 'constant', or 'trapezoidal'"
+            )
         warmup_steps = _non_negative_int(
             data["warmup_steps"],
             "scheduler.warmup_steps",
@@ -368,6 +378,23 @@ class SchedulerConfig:
         if warmup_steps >= total_steps:
             raise TrainingConfigError(
                 "scheduler.warmup_steps must be less than total_steps"
+            )
+        cooldown_steps = _non_negative_int(
+            data.get("cooldown_steps", 0),
+            "scheduler.cooldown_steps",
+        )
+        if data["name"] == "trapezoidal":
+            if cooldown_steps == 0:
+                raise TrainingConfigError(
+                    "trapezoidal scheduler requires cooldown_steps greater than zero"
+                )
+            if warmup_steps + cooldown_steps > total_steps:
+                raise TrainingConfigError(
+                    "scheduler warmup and cooldown exceed total_steps"
+                )
+        elif cooldown_steps != 0:
+            raise TrainingConfigError(
+                "scheduler.cooldown_steps is only valid for trapezoidal schedules"
             )
         return cls(
             name=data["name"],
@@ -379,6 +406,7 @@ class SchedulerConfig:
                 minimum=0,
                 maximum=1,
             ),
+            cooldown_steps=cooldown_steps,
         )
 
 
@@ -648,8 +676,8 @@ class TrainingBudgetConfig:
             },
             "budget",
         )
-        if data["stage"] not in {"A", "B", "C"}:
-            raise TrainingConfigError("budget.stage must be A, B, or C")
+        if data["stage"] not in {"A", "B", "C", "D", "R"}:
+            raise TrainingConfigError("budget.stage must be A, B, C, D, or R")
         raw_tokens = data["expected_tokens_per_step"]
         if not isinstance(raw_tokens, list) or not raw_tokens:
             raise TrainingConfigError(
@@ -706,8 +734,10 @@ class InitializationConfig:
             },
             "initialization",
         )
-        if data["source_stage"] not in {"A", "B"}:
-            raise TrainingConfigError("initialization.source_stage must be A or B")
+        if data["source_stage"] not in {"A", "B", "C", "D"}:
+            raise TrainingConfigError(
+                "initialization.source_stage must be A, B, C, or D"
+            )
         if type(data["load_optimizer_state"]) is not bool:
             raise TrainingConfigError(
                 "initialization.load_optimizer_state must be a boolean"
@@ -850,7 +880,13 @@ class TrainingConfig:
             coverage = actual_samples / budget.available_candidate_samples
             if coverage < budget.minimum_coverage_ratio:
                 raise TrainingConfigError("budget coverage is below its minimum")
-            required_source = {"A": None, "B": "A", "C": "B"}[budget.stage]
+            required_source = {
+                "A": None,
+                "B": "A",
+                "C": "B",
+                "D": "C",
+                "R": "D",
+            }[budget.stage]
             actual_source = (
                 None if initialization is None else initialization.source_stage
             )
@@ -1009,6 +1045,13 @@ def load_training_config(
     if file_sha256(model_path) != config.model.config_sha256:
         raise TrainingConfigError("model config SHA-256 does not match")
     model_config = load_model_config(model_path)
+    if (
+        model_config.components.attention_dropout != 0.0
+        or model_config.components.residual_dropout != 0.0
+    ):
+        raise TrainingConfigError(
+            "base pretraining requires zero attention and residual dropout"
+        )
     if model_config.name != config.model.name:
         raise TrainingConfigError("bound model name does not match model config")
     if model_config.expected_parameter_count != config.model.expected_parameter_count:

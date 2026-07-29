@@ -1,0 +1,25 @@
+schema_version: 1
+evaluation_id: atom-chat-300m-sft-quality-v4-pilots-general-v1
+model_config: configs/model/atom-base-300m-long-v1.yaml
+model_config_sha256: 180b4bb175d1ecc2a231874c3a1897f9712660da02560b9b5d277abf76419f85
+validation_data: artifacts/training-data/formal-validation-token-shards-v2
+validation_manifest_sha256: b88996440f7c529d7544c56e7a8e0473bcb51dcbf61e9ab0009f8b7a0a77a30c
+sequence_length: 4096
+sample_blocks: 512
+sample_seed: 20260716
+micro_batch_size: 2
+loss_chunk_size: 1024
+expected_world_size: 6
+checkpoints:
+  - name: stage-d-cooldown-4k
+    path: artifacts/training-runs/atom-base-300m-cooldown-4k-v1/checkpoints/step-000004744
+    manifest_sha256: cf57e195e4132471b95c7eb4cd4d90073b7443eb058b1334de959d3047a71d68
+    model_sha256: e1dfdf43c67150cba73d716a0c0fcf74a22c9244d0dc3400bfe61eebf52d6e5f
+  - name: sft-pilot-lr5e6-step200
+    path: artifacts/training-runs/atom-chat-300m-sft-quality-v4-replay-pilot-lr5e6-200/checkpoints/step-000000200
+    manifest_sha256: aaff576c66bb422f99691d2f7f084c87fe5870be76b2644e08fef3961f6592d0
+    model_sha256: e1f19efb6ce850cd8059d64d08349cf372afb82515f2e0c96df48a3b12023682
+  - name: sft-pilot-lr1e5-step200
+    path: artifacts/training-runs/atom-chat-300m-sft-quality-v4-replay-pilot-lr1e5-200/checkpoints/step-000000200
+    manifest_sha256: 09d4fb83f709c76bc37917100c70ae9c102e85f4a3461585e804801439e7c8ef
+    model_sha256: 7e57a174c72abf14db3911a6eac195f960d052bcfcb707ea852a347f5c04e573

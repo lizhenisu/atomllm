@@ -98,6 +98,30 @@ def test_next_token_loss_matches_manual_cross_entropy() -> None:
     torch.testing.assert_close(output.loss, expected)
 
 
+def test_weighted_next_token_loss_matches_manual_and_chunked_loss() -> None:
+    model = make_model()
+    input_ids = torch.tensor([[2, 10, 11, 12, 3]])
+    weights = torch.tensor([[1.0, 1.0, 0.25, 1.0, 0.5]])
+
+    output = model(input_ids, labels=input_ids, label_weights=weights)
+    losses = functional.cross_entropy(
+        output.logits[:, :-1].float().transpose(1, 2),
+        input_ids[:, 1:],
+        reduction="none",
+    )
+    expected = (losses * weights[:, 1:]).sum() / weights[:, 1:].sum()
+    chunked = model(
+        input_ids,
+        labels=input_ids,
+        label_weights=weights,
+        loss_chunk_size=2,
+    )
+
+    assert output.loss is not None and chunked.loss is not None
+    torch.testing.assert_close(output.loss, expected)
+    torch.testing.assert_close(chunked.loss, expected, rtol=1e-6, atol=1e-7)
+
+
 def test_chunked_loss_matches_full_loss_and_gradients() -> None:
     model = make_model().train()
     input_ids = torch.randint(4, 512, (2, 11))
@@ -195,6 +219,24 @@ def test_model_causality_blocks_future_token_changes() -> None:
     torch.testing.assert_close(
         original_logits[:, :5],
         changed_logits[:, :5],
+        rtol=1e-5,
+        atol=1e-5,
+    )
+
+
+def test_model_segment_ids_isolate_packed_conversations() -> None:
+    model = make_model()
+    original = torch.randint(4, 512, (1, 8))
+    changed = original.clone()
+    changed[:, :4] = torch.randint(4, 512, (1, 4))
+    segment_ids = torch.tensor([[1, 1, 1, 1, 2, 2, 2, 2]])
+
+    original_logits = model(original, segment_ids=segment_ids).logits
+    changed_logits = model(changed, segment_ids=segment_ids).logits
+
+    torch.testing.assert_close(
+        original_logits[:, 4:],
+        changed_logits[:, 4:],
         rtol=1e-5,
         atol=1e-5,
     )

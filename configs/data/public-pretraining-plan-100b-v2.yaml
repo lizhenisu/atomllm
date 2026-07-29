@@ -1,0 +1,40 @@
+schema_version: 2
+name: atom-public-pretraining-100b-v2
+source_registry: configs/data/public-tokenizer-corpus-en-zh-v1.yaml
+training_split: all-selected-documents
+validation_status: deferred
+total_target_tokens: 100000000000
+language_target_tokens:
+  en: 50000000000
+  code: 10000000000
+  zh-Hans: 40000000000
+sequence_length: 4096
+shard_token_capacity: 67108864
+token_dtype: uint16-le
+document_boundary_token: <eos>
+synthetic_training_content: false
+local_text_conversion: none
+local_privacy_filtering: none
+source_overrides:
+  fineweb-edu-en-score4:
+    config_name: sample-350BT
+source_target_tokens:
+  cci3-hq-native-zh-hans: 24500000000
+  industry-corpus2-zh-high: 15000000000
+  wikipedia-20231101-zh-hans-native: 500000000
+  fineweb-edu-en-score4: 30000000000
+  open-web-math-en: 8000000000
+  pes2o-v3-en-science: 8000000000
+  wikipedia-20231101-en: 4000000000
+  starcoderdata-python: 1750000000
+  starcoderdata-javascript: 1500000000
+  starcoderdata-java: 1250000000
+  starcoderdata-cpp: 1000000000
+  starcoderdata-c: 750000000
+  starcoderdata-typescript: 750000000
+  starcoderdata-go: 750000000
+  starcoderdata-rust: 750000000
+  starcoderdata-shell: 500000000
+  starcoderdata-sql: 500000000
+  starcoderdata-html: 250000000
+  starcoderdata-css: 250000000

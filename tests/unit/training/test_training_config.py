@@ -82,6 +82,83 @@ def test_batch_accumulation_schedule_has_exact_cumulative_budget() -> None:
     assert scheduled.tokens_through(4, 8) == 983_040
 
 
+def test_stage_d_cooldown_accepts_stage_c_initialization(tmp_path: Path) -> None:
+    source = Path("configs/training/atom-base-300m-context-40k-v1.yaml")
+    raw = yaml.safe_load(source.read_text(encoding="utf-8"))
+    raw["name"] = "stage-d-test"
+    raw["budget"]["stage"] = "D"
+    raw["initialization"] = {
+        "source_stage": "C",
+        "source_config_path": str(source),
+        "source_config_sha256": file_sha256(source),
+        "source_final_step": 1527,
+        "load_optimizer_state": True,
+    }
+    path = tmp_path / "stage-d.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    config = load_training_config(path)
+
+    assert config.budget is not None and config.budget.stage == "D"
+    assert config.initialization is not None
+    assert config.initialization.source_stage == "C"
+
+
+def test_recovery_stage_accepts_stage_d_with_fresh_optimizer(tmp_path: Path) -> None:
+    source = Path("configs/training/atom-base-300m-cooldown-4k-6x3090-v1.yaml")
+    raw = yaml.safe_load(source.read_text(encoding="utf-8"))
+    raw["name"] = "recovery-test"
+    raw["budget"]["stage"] = "R"
+    raw["initialization"] = {
+        "source_stage": "D",
+        "source_config_path": str(source),
+        "source_config_sha256": file_sha256(source),
+        "source_final_step": 4744,
+        "load_optimizer_state": False,
+    }
+    path = tmp_path / "recovery.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    config = load_training_config(path)
+
+    assert config.budget is not None and config.budget.stage == "R"
+    assert config.initialization is not None
+    assert config.initialization.source_stage == "D"
+    assert config.initialization.load_optimizer_state is False
+
+
+def test_loads_trapezoidal_scheduler_with_late_cooldown(tmp_path: Path) -> None:
+    raw = yaml.safe_load(TRAINING_CONFIG.read_text(encoding="utf-8"))
+    raw["scheduler"].update(
+        {
+            "name": "trapezoidal",
+            "cooldown_steps": 100,
+        }
+    )
+    config_path = tmp_path / "training.yaml"
+    config_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    config = load_training_config(config_path)
+
+    assert config.scheduler.name == "trapezoidal"
+    assert config.scheduler.cooldown_steps == 100
+
+
+def test_rejects_invalid_trapezoidal_cooldown(tmp_path: Path) -> None:
+    raw = yaml.safe_load(TRAINING_CONFIG.read_text(encoding="utf-8"))
+    raw["scheduler"].update(
+        {
+            "name": "trapezoidal",
+            "cooldown_steps": raw["scheduler"]["total_steps"],
+        }
+    )
+    config_path = tmp_path / "training.yaml"
+    config_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    with pytest.raises(TrainingConfigError, match="warmup and cooldown"):
+        load_training_config(config_path)
+
+
 def test_loads_explicit_one_variable_atom_5m_matrix() -> None:
     matrix, base = load_experiment_matrix(MATRIX_CONFIG)
 
@@ -100,6 +177,24 @@ def test_rejects_model_hash_drift(tmp_path: Path) -> None:
 
     with pytest.raises(TrainingConfigError, match="model config SHA-256"):
         load_training_config(config_path)
+
+
+def test_rejects_nonzero_dropout_for_base_pretraining(tmp_path: Path) -> None:
+    raw_model = yaml.safe_load(
+        Path("configs/model/atom-micro-4m.yaml").read_text(encoding="utf-8")
+    )
+    raw_model["components"]["residual_dropout"] = 0.1
+    model_path = tmp_path / "model.yaml"
+    model_path.write_text(yaml.safe_dump(raw_model), encoding="utf-8")
+
+    raw_training = yaml.safe_load(TRAINING_CONFIG.read_text(encoding="utf-8"))
+    raw_training["model"]["config_path"] = "model.yaml"
+    raw_training["model"]["config_sha256"] = file_sha256(model_path)
+    config_path = tmp_path / "training.yaml"
+    config_path.write_text(yaml.safe_dump(raw_training), encoding="utf-8")
+
+    with pytest.raises(TrainingConfigError, match="base pretraining requires zero"):
+        load_training_config(config_path, project_root=tmp_path)
 
 
 def test_rejects_release_status_with_smoke_data(tmp_path: Path) -> None:

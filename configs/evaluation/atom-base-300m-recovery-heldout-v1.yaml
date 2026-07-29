@@ -1,0 +1,33 @@
+schema_version: 1
+evaluation_id: atom-base-300m-recovery-heldout-v1
+model_config: configs/model/atom-base-300m-long-v1.yaml
+model_config_sha256: 180b4bb175d1ecc2a231874c3a1897f9712660da02560b9b5d277abf76419f85
+validation_data: artifacts/training-data/formal-validation-token-shards-v2
+validation_manifest_sha256: b88996440f7c529d7544c56e7a8e0473bcb51dcbf61e9ab0009f8b7a0a77a30c
+sequence_length: 4096
+sample_blocks: 512
+sample_seed: 20260716
+micro_batch_size: 2
+loss_chunk_size: 1024
+expected_world_size: 6
+checkpoints:
+  - name: stage-d-cooldown
+    path: artifacts/training-runs/atom-base-300m-cooldown-4k-v1/checkpoints/step-000004744
+    manifest_sha256: cf57e195e4132471b95c7eb4cd4d90073b7443eb058b1334de959d3047a71d68
+    model_sha256: e1dfdf43c67150cba73d716a0c0fcf74a22c9244d0dc3400bfe61eebf52d6e5f
+  - name: recovery-step-1186
+    path: artifacts/training-runs/atom-base-300m-recovery-public-v1/checkpoints/step-000001186
+    manifest_sha256: 5777fd820e727974539dbff1380cdced486accd9f420ac7d0fea60af3ea2dee0
+    model_sha256: 9cc96804d00cc5202f91dbdba7460749d5fe89164e0f4b24f0ffbccc3cabac72
+  - name: recovery-step-2372
+    path: artifacts/training-runs/atom-base-300m-recovery-public-v1/checkpoints/step-000002372
+    manifest_sha256: 019f996c3730e63d030f4893e0eb5b7bab8949effa4e5bea36084d78b3154f84
+    model_sha256: 04d72ec5cfbec269817e5fec34aee9afc6640537f2bd8bc9b8c4b8f814d619b4
+  - name: recovery-step-3558
+    path: artifacts/training-runs/atom-base-300m-recovery-public-v1/checkpoints/step-000003558
+    manifest_sha256: 5450390ca21babfff2be3c12ebcad7c3ee81aab97d54def219c2e1f560b46029
+    model_sha256: 01a97e2aee37b31f3492729f2d9c6c4dc84124fb34dfaab1d3cee853004b61f5
+  - name: recovery-step-4744
+    path: artifacts/training-runs/atom-base-300m-recovery-public-v1/checkpoints/step-000004744
+    manifest_sha256: 4f1ea0a1f5757a2ee443fce77883543dca32509b5c8da31b9d3581f30d355765
+    model_sha256: 901a63e06e10b072561650c4875980e5ab04e789609936de294af71a01f9fdd5

@@ -1,0 +1,47 @@
+schema_version: 1
+name: atom-chat-300m-arithmetic-core-v7-repair20epoch-lr1e5
+status: smoke
+seed: 20260718
+model:
+  config_path: configs/model/atom-base-300m-long-v1.yaml
+  expected_parameter_count: 303350784
+data:
+  path: artifacts/post-training-data/stage8-sft-arithmetic-core-v7
+  manifest_sha256: 30f2c018e04d6689616645f0fb27dc4eff6238386ce0c4198735f029ca1b1529
+  sample_ratio: 1
+  max_samples: null
+  drop_last: false
+initialization:
+  base_checkpoint: artifacts/training-runs/atom-chat-300m-arithmetic-core-v6-repair20epoch-lr1e5/checkpoints/step-000000440
+  base_manifest_sha256: 285b974f1c52301339be66a4b997fc17db19875add46c220ef74302fe9c027e9
+  base_model_sha256: c450e0f5fa86723ab1af80398a19adfad0bffdc9f92b7e272dbcf1412db3882b
+  load_optimizer_state: false
+  base_validation_status: deferred
+budget:
+  lower_assistant_target_tokens: 6702400
+  upper_assistant_target_tokens: 6702400
+batch:
+  expected_world_size: 6
+  micro_batch_size: 2
+  gradient_accumulation_steps: 2
+optimizer:
+  learning_rate: 1.0e-5
+  minimum_learning_rate_ratio: 0.2
+  warmup_ratio: 0.03
+  weight_decay: 0.1
+  max_gradient_norm: 1.0
+checkpoint:
+  save_every_steps: 145
+  keep_last: 4
+  exact_resume: true
+runtime:
+  device: cuda
+  precision: bf16
+  gradient_checkpointing: false
+  checkpoint_segment_layers: 1
+  checkpoint_interval_segments: 1
+  loss_chunk_size: 1024
+  ddp_bucket_cap_mb: 200
+  compile_model: false
+  isolate_packed_conversations: true
+  eot_loss_weight: 0.25

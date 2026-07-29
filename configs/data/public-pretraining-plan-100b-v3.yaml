@@ -1,0 +1,64 @@
+schema_version: 2
+name: atom-public-pretraining-100b-v3-dclm-extension
+parent_plan_sha256: 0131b1ef5ffb6bcb575fcb319b1413afbcf92535ed21ad631aa4622d655fe54e
+source_registry: configs/data/public-tokenizer-corpus-en-zh-v1.yaml
+training_split: all-selected-documents
+validation_status: deferred
+total_target_tokens: 100000000000
+language_target_tokens:
+  en: 50000000000
+  code: 10000000000
+  zh-Hans: 40000000000
+sequence_length: 4096
+shard_token_capacity: 67108864
+token_dtype: uint16-le
+document_boundary_token: <eos>
+synthetic_training_content: false
+local_text_conversion: none
+local_privacy_filtering: none
+source_overrides:
+  fineweb-edu-en-score4:
+    config_name: sample-350BT
+source_target_tokens:
+  cci3-hq-native-zh-hans: 24500000000
+  industry-corpus2-zh-high: 15000000000
+  wikipedia-20231101-zh-hans-native: 500000000
+  fineweb-edu-en-score4: 26365684814
+  open-web-math-en: 8000000000
+  pes2o-v3-en-science: 8000000000
+  wikipedia-20231101-en: 4000000000
+  supplement-dclm-baseline-en: 3634315186
+  starcoderdata-python: 1750000000
+  starcoderdata-javascript: 1500000000
+  starcoderdata-java: 1250000000
+  starcoderdata-cpp: 1000000000
+  starcoderdata-c: 750000000
+  starcoderdata-typescript: 750000000
+  starcoderdata-go: 750000000
+  starcoderdata-rust: 750000000
+  starcoderdata-shell: 500000000
+  starcoderdata-sql: 500000000
+  starcoderdata-html: 250000000
+  starcoderdata-css: 250000000
+supplemental_sources:
+  - source_id: supplement-dclm-baseline-en
+    dataset: mlfoundations/dclm-baseline-1.0-parquet
+    config_name: null
+    split: train
+    revision: 817d6752765f6a41261085171dd546b104f60626
+    data_files_pattern: "filtered/OH_eli5_vs_rw_v2_bigram_200k_train/fasttext_openhermes_reddit_eli5_vs_rw_v2_bigram_200k_train/processed_data/global-shard_01_of_10/local-shard_0_of_10/*.parquet"
+    file_format: parquet
+    text_field: text
+    id_field: id
+    language: en
+    content_type: general
+    target_text_bytes: 16000000000
+    minimum_characters: 200
+    maximum_characters: 500000
+    score_field: null
+    minimum_score: null
+    exclude_if_true_fields: []
+    license: CC-BY-4.0
+    source_card: https://huggingface.co/datasets/mlfoundations/dclm-baseline-1.0-parquet
+    synthetic_content: false
+    text_conversion: none

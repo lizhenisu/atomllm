@@ -1,0 +1,80 @@
+schema_version: 1
+name: atom-base-300m-cooldown-4k-6x3090-v1-smoke
+status: smoke
+seed: 20260716
+model:
+  config_path: configs/model/atom-base-300m-long-v1.yaml
+  config_sha256: 180b4bb175d1ecc2a231874c3a1897f9712660da02560b9b5d277abf76419f85
+  name: atom-base-300m-long-v1
+  expected_parameter_count: 303350784
+data:
+  data_version_id: atom-base-300m-cooldown-pilot-v1
+  data_manifest_sha256: 6489228304dd55c1beab33cbabccda958792bb25601bd92d5cdab6a115312ba5
+  dataset_manifest_sha256: a15edc821512fbf6266cd62a256905f37fb1251a15436eb9689e353f8e39ead6
+  split: train
+  split_sha256: c93480d9e03ebaa7a30cbf68541064cca045f33441c19cb9ef2e545d2e12dd6d
+  tokenizer_version_id: tokenizer-version-atom-tokenizer-formal-v1-936e948b3509
+  tokenizer_sha256: 7a3c19c63048274642f7bf324b7ecd36899a7c01c1de9b4584bf41102fb4fa14
+  formal_training_eligible: true
+batch:
+  sequence_length: 4096
+  micro_batch_size: 2
+  gradient_accumulation_steps: 4
+optimizer:
+  name: adamw
+  learning_rate: 0.00001
+  beta1: 0.9
+  beta2: 0.95
+  epsilon: 1.0e-08
+  weight_decay: 0.0
+scheduler:
+  name: cosine
+  warmup_steps: 3
+  total_steps: 30
+  minimum_learning_rate_ratio: 0.1
+stability:
+  max_gradient_norm: 0.5
+  reject_non_finite_loss: true
+  reject_non_finite_gradient_norm: true
+checkpoint:
+  save_every_steps: 15
+  keep_last: 3
+  exact_resume: true
+  model_format: safetensors
+  save_optimizer: true
+  save_scheduler: true
+  save_rng_state: true
+  save_data_state: true
+runtime:
+  device: cuda
+  precision: bf16
+  gradient_checkpointing: false
+  checkpoint_segment_layers: 1
+  checkpoint_interval_segments: 1
+  loss_chunk_size: 1024
+  ddp_bucket_cap_mb: 200
+  ddp_static_graph: true
+  compile_model: false
+  deterministic: true
+monitoring:
+  enabled: true
+  tensorboard: true
+  log_every_steps: 5
+  flush_every_steps: 5
+distributed:
+  enabled: true
+  backend: nccl
+budget:
+  stage: D
+  expected_world_size: 6
+  expected_tokens_per_step: [196608]
+  expected_training_samples: 1440
+  expected_total_tokens: 5898240
+  available_candidate_samples: 227714
+  minimum_coverage_ratio: 0.006
+initialization:
+  source_stage: C
+  source_config_path: configs/training/atom-base-300m-context-40k-v1.yaml
+  source_config_sha256: fb79e0e9507a874088d9a5e5df74c8108a30f8fd6cbfcca3321070f5ec8cd02c
+  source_final_step: 1527
+  load_optimizer_state: true

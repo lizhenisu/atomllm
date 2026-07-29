@@ -12,6 +12,7 @@ import yaml
 
 TOKENIZER_SCHEMA_VERSION = 1
 TOKENIZER_VOCAB_SIZE = 32_000
+TOKENIZER_CANDIDATE_VOCAB_SIZES = frozenset({32_000, 48_000})
 TOKENIZER_MODEL_MAX_LENGTH = 8_192
 VALID_STATUSES = frozenset({"smoke", "release"})
 VALID_EVALUATION_SUITES = frozenset(
@@ -138,11 +139,15 @@ class AlgorithmConfig:
                 raise TokenizerConfigError(
                     f"algorithm.{field_name} must be {expected!r}"
                 )
-        if type(data["vocab_size"]) is not int or data["vocab_size"] != (
-            TOKENIZER_VOCAB_SIZE
+        if (
+            type(data["vocab_size"]) is not int
+            or data["vocab_size"] not in TOKENIZER_CANDIDATE_VOCAB_SIZES
         ):
+            choices = ", ".join(
+                str(size) for size in sorted(TOKENIZER_CANDIDATE_VOCAB_SIZES)
+            )
             raise TokenizerConfigError(
-                f"algorithm.vocab_size must be {TOKENIZER_VOCAB_SIZE}"
+                f"algorithm.vocab_size must be one of: {choices}"
             )
         if type(data["min_frequency"]) is not int or data["min_frequency"] < 1:
             raise TokenizerConfigError("algorithm.min_frequency must be positive")

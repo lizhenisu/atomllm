@@ -1,0 +1,44 @@
+schema_version: 1
+name: atom-base-300m-cooldown-pilot-v1
+split_dir: artifacts/data/formal-70g/split-v1
+split_manifest_sha256: c93480d9e03ebaa7a30cbf68541064cca045f33441c19cb9ef2e545d2e12dd6d
+audit_manifest: artifacts/data/formal-70g/audit-v1/manifest.json
+audit_manifest_sha256: 6489228304dd55c1beab33cbabccda958792bb25601bd92d5cdab6a115312ba5
+tokenizer: artifacts/tokenizers/atom-tokenizer-formal-v4/tokenizer.json
+tokenizer_sha256: 7a3c19c63048274642f7bf324b7ecd36899a7c01c1de9b4584bf41102fb4fa14
+output_dir: artifacts/training-data/atom-base-300m-cooldown-pilot-v1
+selection_seed: 20260716
+require_no_quality_warnings: true
+require_no_privacy_warnings: true
+workers: 6
+rules:
+  - name: encyclopedia
+    source_ids: [wikipedia-20231101]
+    content_types: [encyclopedia]
+    languages: [zh-Hans, zh-Hant, en, ja]
+    basis_points: 2375
+  - name: science
+    source_ids: [pes2o-v3]
+    content_types: [science]
+    languages: [en]
+    basis_points: 1460
+  - name: math
+    source_ids: [open-web-math-2023-10]
+    content_types: [math]
+    languages: [en]
+    basis_points: 1297
+  - name: code
+    source_ids: [common-pile-comma-v0-1]
+    content_types: [code]
+    languages: [en]
+    basis_points: 1781
+  - name: chinese-general
+    source_ids: [industry-corpus2-2024-12, chinese-c4-2026-07]
+    content_types: [general]
+    languages: [zh-Hans, zh-Hant]
+    basis_points: 431
+  - name: english-general
+    source_ids: [fineweb-2025-07, fineweb2-v2-1-1]
+    content_types: [general]
+    languages: [en]
+    basis_points: 224

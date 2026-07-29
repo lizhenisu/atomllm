@@ -1,0 +1,45 @@
+schema_version: 1
+name: atom-chat-sft-v2-overfit-1gpu-smoke
+status: smoke
+seed: 42
+model:
+  config_path: configs/model/atom-sft-smoke-4m.yaml
+  expected_parameter_count: 4465280
+data:
+  path: artifacts/post-training-data/stage8-sft-v2
+  manifest_sha256: 0e512ac06e266fe74ec00079ef8523514a45e1ab86a635428dc6f85b0b6d137e
+  sample_ratio: 1
+  max_samples: null
+  drop_last: false
+initialization:
+  base_checkpoint: null
+  base_manifest_sha256: null
+  base_model_sha256: null
+  load_optimizer_state: false
+  base_validation_status: deferred
+budget:
+  lower_assistant_target_tokens: 152066458
+  upper_assistant_target_tokens: 304132916
+batch:
+  expected_world_size: 1
+  micro_batch_size: 1
+  gradient_accumulation_steps: 1
+optimizer:
+  learning_rate: 1.0e-3
+  minimum_learning_rate_ratio: 1.0
+  warmup_ratio: 0.00001
+  weight_decay: 0.0
+  max_gradient_norm: 1.0
+checkpoint:
+  save_every_steps: 10
+  keep_last: 3
+  exact_resume: true
+runtime:
+  device: cuda
+  precision: bf16
+  gradient_checkpointing: false
+  checkpoint_segment_layers: 1
+  checkpoint_interval_segments: 1
+  loss_chunk_size: 1024
+  ddp_bucket_cap_mb: 25
+  compile_model: false

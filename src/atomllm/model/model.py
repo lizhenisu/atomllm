@@ -7,9 +7,10 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as functional
 from torch import nn
+from torch.nn.attention.flex_attention import BlockMask
 from torch.utils.checkpoint import checkpoint
 
-from atomllm.model.attention import KVCache
+from atomllm.model.attention import KVCache, build_segment_attention_mask
 from atomllm.model.block import TransformerBlock
 from atomllm.model.config import ModelConfig
 from atomllm.model.normalization import RMSNorm
@@ -102,6 +103,7 @@ class AtomLLM(nn.Module):
         logits: torch.Tensor,
         labels: torch.Tensor,
         attention_mask: torch.Tensor | None,
+        label_weights: torch.Tensor | None,
     ) -> torch.Tensor:
         if labels.shape != logits.shape[:2]:
             raise ValueError("labels must have the same [batch, sequence] shape")
@@ -140,11 +142,51 @@ class AtomLLM(nn.Module):
             torch._assert_async(has_targets, "loss has no valid next-token targets")
         elif not has_targets.item():
             raise ValueError("loss has no valid next-token targets")
-        return functional.cross_entropy(
-            shift_logits.view(-1, self.vocab_size),
-            shift_labels.view(-1),
+        if label_weights is None:
+            return functional.cross_entropy(
+                shift_logits.view(-1, self.vocab_size),
+                shift_labels.view(-1),
+                ignore_index=-100,
+            )
+        weights = self._validate_label_weights(
+            label_weights,
+            effective_labels,
+            device=logits.device,
+        )[:, 1:]
+        losses = functional.cross_entropy(
+            shift_logits.transpose(1, 2),
+            shift_labels,
             ignore_index=-100,
+            reduction="none",
         )
+        return (losses * weights).sum() / weights.sum()
+
+    def _validate_label_weights(
+        self,
+        label_weights: torch.Tensor,
+        effective_labels: torch.Tensor,
+        *,
+        device: torch.device,
+    ) -> torch.Tensor:
+        if label_weights.shape != effective_labels.shape:
+            raise ValueError("label_weights must match labels")
+        if not label_weights.is_floating_point():
+            raise TypeError("label_weights must use a floating-point dtype")
+        if label_weights.device != device:
+            raise ValueError("label_weights must use the model device")
+        valid = torch.all(torch.isfinite(label_weights) & (label_weights >= 0))
+        if device.type == "cuda":
+            torch._assert_async(valid, "label_weights must be finite and non-negative")
+        elif not valid.item():
+            raise ValueError("label_weights must be finite and non-negative")
+        weights = label_weights.float().clone()
+        weights.masked_fill_(effective_labels == -100, 0)
+        positive = torch.any(weights[:, 1:] > 0)
+        if device.type == "cuda":
+            torch._assert_async(positive, "loss has no positive label weights")
+        elif not positive.item():
+            raise ValueError("loss has no positive label weights")
+        return weights
 
     def _effective_labels(
         self,
@@ -195,6 +237,7 @@ class AtomLLM(nn.Module):
         hidden_states: torch.Tensor,
         labels: torch.Tensor,
         attention_mask: torch.Tensor | None,
+        label_weights: torch.Tensor | None,
         chunk_size: int,
     ) -> torch.Tensor:
         if type(chunk_size) is not int or chunk_size <= 0:
@@ -207,40 +250,73 @@ class AtomLLM(nn.Module):
         )
         shifted_hidden = hidden_states[:, :-1]
         shifted_labels = effective[:, 1:]
-        valid_count = (shifted_labels != -100).sum()
+        shifted_weights = (
+            None
+            if label_weights is None
+            else self._validate_label_weights(
+                label_weights,
+                effective,
+                device=hidden_states.device,
+            )[:, 1:]
+        )
+        denominator = (
+            (shifted_labels != -100).sum()
+            if shifted_weights is None
+            else shifted_weights.sum()
+        )
         loss_sum = hidden_states.new_zeros((), dtype=torch.float32)
 
-        def chunk_loss(states: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        def chunk_loss(
+            states: torch.Tensor,
+            targets: torch.Tensor,
+            weights: torch.Tensor | None,
+        ) -> torch.Tensor:
             logits = functional.linear(states, self.lm_head.weight).float()
-            return functional.cross_entropy(
-                logits.reshape(-1, self.vocab_size),
-                targets.reshape(-1),
+            if weights is None:
+                return functional.cross_entropy(
+                    logits.reshape(-1, self.vocab_size),
+                    targets.reshape(-1),
+                    ignore_index=-100,
+                    reduction="sum",
+                )
+            losses = functional.cross_entropy(
+                logits.transpose(1, 2),
+                targets,
                 ignore_index=-100,
-                reduction="sum",
+                reduction="none",
             )
+            return (losses * weights).sum()
 
         for start in range(0, shifted_hidden.shape[1], chunk_size):
             states = shifted_hidden[:, start : start + chunk_size]
             targets = shifted_labels[:, start : start + chunk_size]
+            weights = (
+                None
+                if shifted_weights is None
+                else shifted_weights[:, start : start + chunk_size]
+            )
             if self.training and torch.is_grad_enabled():
                 partial = checkpoint(
                     chunk_loss,
                     states,
                     targets,
+                    weights,
                     use_reentrant=False,
                     preserve_rng_state=False,
                 )
             else:
-                partial = chunk_loss(states, targets)
+                partial = chunk_loss(states, targets, weights)
             loss_sum = loss_sum + partial
-        return loss_sum / valid_count
+        return loss_sum / denominator
 
     def forward(
         self,
         input_ids: torch.Tensor,
         *,
         attention_mask: torch.Tensor | None = None,
+        segment_ids: torch.Tensor | None = None,
         labels: torch.Tensor | None = None,
+        label_weights: torch.Tensor | None = None,
         past_key_values: ModelCache | None = None,
         use_cache: bool = False,
         loss_chunk_size: int | None = None,
@@ -251,6 +327,19 @@ class AtomLLM(nn.Module):
         self._validate_input_ids(input_ids)
         if labels is not None and past_key_values is not None:
             raise ValueError("labels with past_key_values are not supported")
+        if label_weights is not None and labels is None:
+            raise ValueError("label_weights require labels")
+        if segment_ids is not None:
+            if segment_ids.shape != input_ids.shape:
+                raise ValueError("segment_ids must match input_ids")
+            if segment_ids.device != input_ids.device:
+                raise ValueError("segment_ids must use the input device")
+            if attention_mask is not None:
+                raise ValueError(
+                    "segment_ids and attention_mask are mutually exclusive"
+                )
+            if past_key_values is not None or use_cache:
+                raise ValueError("segment_ids are only supported without KV cache")
         if gradient_checkpointing and (not self.training or use_cache):
             raise ValueError(
                 "gradient checkpointing requires training mode without KV cache"
@@ -264,6 +353,12 @@ class AtomLLM(nn.Module):
             raise ValueError("checkpoint_interval_segments must be a positive integer")
         layer_caches = self._validate_cache(past_key_values)
         hidden_states = self.token_embeddings(input_ids)
+        segment_attention_mask: BlockMask | torch.Tensor | None = None
+        if segment_ids is not None:
+            segment_attention_mask = build_segment_attention_mask(
+                segment_ids,
+                use_flex=self.layers[0].attention.head_dim >= 16,
+            )
         next_caches: list[KVCache] = []
         if gradient_checkpointing:
             for segment_index, start in enumerate(
@@ -279,6 +374,7 @@ class AtomLLM(nn.Module):
                         states = current_layer(
                             states,
                             attention_mask=attention_mask,
+                            segment_attention_mask=segment_attention_mask,
                             past_key_value=None,
                             use_cache=False,
                         )[0]
@@ -306,6 +402,7 @@ class AtomLLM(nn.Module):
                 hidden_states, next_cache = layer(
                     hidden_states,
                     attention_mask=attention_mask,
+                    segment_attention_mask=segment_attention_mask,
                     past_key_value=layer_cache,
                     use_cache=use_cache,
                 )
@@ -320,12 +417,13 @@ class AtomLLM(nn.Module):
                 hidden_states,
                 labels,
                 attention_mask,
+                label_weights,
                 loss_chunk_size,
             )
         else:
             logits = self.lm_head(hidden_states)
             loss = (
-                self._loss(logits, labels, attention_mask)
+                self._loss(logits, labels, attention_mask, label_weights)
                 if labels is not None
                 else None
             )

@@ -1,0 +1,18 @@
+schema_version: 1
+evaluation_id: atom-chat-300m-sft-quality-v4-final-sft-v1
+model_config: configs/model/atom-base-300m-long-v1.yaml
+model_config_sha256: 180b4bb175d1ecc2a231874c3a1897f9712660da02560b9b5d277abf76419f85
+heldout_data: artifacts/post-training-validation/stage8-sft-quality-heldout-v2
+heldout_manifest_sha256: 99044ce60ac31c60176ec51a0aba48d78b4d21a3a7981285fc0a4fea273e0b75
+micro_batch_size: 2
+loss_chunk_size: 1024
+expected_world_size: 6
+checkpoints:
+  - name: stage-d-cooldown-4k
+    path: artifacts/training-runs/atom-base-300m-cooldown-4k-v1/checkpoints/step-000004744
+    manifest_sha256: cf57e195e4132471b95c7eb4cd4d90073b7443eb058b1334de959d3047a71d68
+    model_sha256: e1dfdf43c67150cba73d716a0c0fcf74a22c9244d0dc3400bfe61eebf52d6e5f
+  - name: atom-chat-300m-sft-quality-v4-final
+    path: artifacts/training-runs/atom-chat-300m-sft-quality-v4-replay-6x3090-v1/checkpoints/step-000005317
+    manifest_sha256: ca65383384ed7ff2b719e5972e04d70c6a148b62899b42c17fedb2a29b40f026
+    model_sha256: 632c96041a48b77e3340adbcf106300d8ba56a0159af7b349a0bd639cc7c7c92

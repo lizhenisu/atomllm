@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import shutil
 import subprocess
 import time
@@ -38,6 +39,108 @@ from atomllm.training.state import DataState, TrainerState
 
 class TrainingError(RuntimeError):
     """Raised when a training step violates stability or runtime requirements."""
+
+
+def configure_cuda_runtime(*, deterministic: bool) -> None:
+    """Select reproducible or throughput-oriented CUDA backend behavior."""
+    if type(deterministic) is not bool:
+        raise TypeError("deterministic must be a boolean")
+    torch.use_deterministic_algorithms(deterministic)
+    torch.backends.cudnn.deterministic = deterministic
+    torch.backends.cudnn.benchmark = not deterministic
+    torch.backends.cuda.matmul.allow_tf32 = not deterministic
+    torch.backends.cudnn.allow_tf32 = not deterministic
+    if not deterministic:
+        # This variable is only needed by deterministic cuBLAS algorithms and
+        # can otherwise restrict implementation selection.
+        os.environ.pop("CUBLAS_WORKSPACE_CONFIG", None)
+
+
+def write_completed_run_marker(
+    *,
+    run_dir: Path,
+    report_path: Path,
+    training_config_path: Path,
+    final_global_step: int,
+) -> dict[str, object]:
+    latest_path = run_dir / "checkpoints/latest.json"
+    if not latest_path.is_file() or not report_path.is_file():
+        raise TrainingError("completed run is missing latest checkpoint or report")
+    latest = json.loads(latest_path.read_text(encoding="utf-8"))
+    checkpoint_id = latest.get("checkpoint_id")
+    expected_manifest_sha = latest.get("manifest_sha256")
+    if not isinstance(checkpoint_id, str) or not isinstance(expected_manifest_sha, str):
+        raise TrainingError("latest checkpoint pointer is invalid")
+    checkpoint_manifest_path = run_dir / "checkpoints" / checkpoint_id / "manifest.json"
+    if (
+        not checkpoint_manifest_path.is_file()
+        or file_sha256(checkpoint_manifest_path) != expected_manifest_sha
+    ):
+        raise TrainingError("latest checkpoint manifest does not match pointer")
+    checkpoint_manifest = json.loads(
+        checkpoint_manifest_path.read_text(encoding="utf-8")
+    )
+    if checkpoint_manifest.get("global_step") != final_global_step:
+        raise TrainingError("latest checkpoint is not the final global step")
+    completion = {
+        "schema_version": 1,
+        "run_id": run_dir.name,
+        "final_global_step": final_global_step,
+        "checkpoint_id": checkpoint_id,
+        "checkpoint_manifest_sha256": expected_manifest_sha,
+        "latest_pointer_sha256": file_sha256(latest_path),
+        "training_config_sha256": file_sha256(training_config_path),
+        "training_report": report_path.relative_to(run_dir).as_posix(),
+        "training_report_sha256": file_sha256(report_path),
+    }
+    completion_path = run_dir / "completion.json"
+    temporary = run_dir / ".completion.json.tmp"
+    temporary.write_text(
+        json.dumps(completion, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    temporary.replace(completion_path)
+    marker = run_dir / "COMPLETED"
+    marker_temporary = run_dir / ".COMPLETED.tmp"
+    marker_temporary.write_text(
+        f"{file_sha256(completion_path)}  completion.json\n", encoding="utf-8"
+    )
+    marker_temporary.replace(marker)
+    return completion
+
+
+def public_sharded_binding_mismatches(
+    manifest: dict[str, object],
+    config: TrainingConfig,
+    *,
+    model_vocab_size: int,
+) -> list[str]:
+    """Return public-shard fields that do not match the immutable run config."""
+    identity = manifest.get("identity")
+    tokenizer = manifest.get("tokenizer")
+    if not isinstance(identity, dict) or not isinstance(tokenizer, dict):
+        return ["public_manifest_schema"]
+    checks = {
+        "dataset_id": (manifest.get("dataset_id"), config.data.data_version_id),
+        "split": (manifest.get("split"), config.data.split),
+        "sequence_length": (
+            manifest.get("sequence_length"),
+            config.batch.sequence_length,
+        ),
+        "plan_sha256": (
+            identity.get("plan_sha256"),
+            config.data.data_manifest_sha256,
+        ),
+        "identity_sha256": (
+            manifest.get("identity_sha256"),
+            config.data.split_sha256,
+        ),
+        "tokenizer_sha256": (
+            identity.get("tokenizer_sha256"),
+            config.data.tokenizer_sha256,
+        ),
+        "vocab_size": (tokenizer.get("vocab_size"), model_vocab_size),
+    }
+    return [field for field, (actual, expected) in checks.items() if actual != expected]
 
 
 @dataclass(frozen=True, slots=True)
@@ -717,18 +820,28 @@ def _run_main(
     ):
         raise TrainingError("dataset manifest SHA-256 does not match config")
     data_format = raw_manifest.get("format_version")
+    binding_mismatches: list[str] = []
     if data_format == "document-bos-eos-sharded-v2":
         dataset = load_sharded_training_dataset(
             data_directory,
             sequence_length=config.batch.sequence_length,
             distributed=distributed,
         )
-        identity = dataset.manifest["identity"]
-        expected_identity = {
-            "split_manifest_sha256": config.data.split_sha256,
-            "audit_manifest_sha256": config.data.data_manifest_sha256,
-            "tokenizer_sha256": config.data.tokenizer_sha256,
-        }
+        if dataset.manifest.get("public_training_eligible") is True:
+            binding_mismatches = public_sharded_binding_mismatches(
+                dataset.manifest,
+                config,
+                model_vocab_size=model_config.tokenizer.vocab_size,
+            )
+            expected_identity = {}
+            identity = {}
+        else:
+            identity = dataset.manifest["identity"]
+            expected_identity = {
+                "split_manifest_sha256": config.data.split_sha256,
+                "audit_manifest_sha256": config.data.data_manifest_sha256,
+                "tokenizer_sha256": config.data.tokenizer_sha256,
+            }
     elif data_format == "document-long-window-view-v1":
         dataset = load_long_window_dataset(
             data_directory,
@@ -750,7 +863,7 @@ def _run_main(
             "sequence_length": config.batch.sequence_length,
             "vocab_size": model_config.tokenizer.vocab_size,
         }
-    mismatches = [
+    mismatches = binding_mismatches + [
         key
         for key, expected_value in expected_identity.items()
         if identity.get(key) != expected_value
@@ -818,6 +931,8 @@ def _run_main(
             print(json.dumps(summary, sort_keys=True))
         return 0
 
+    if config.runtime.device == "cuda":
+        configure_cuda_runtime(deterministic=config.runtime.deterministic)
     set_seed(config.seed + distributed.rank)
     model = AtomLLM(model_config)
     if isinstance(dataset, (ShardedTokenDataset, LongWindowDataset)):
@@ -996,6 +1111,13 @@ def _run_main(
     report_path.write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    if result.trainer_state.global_step == config.scheduler.total_steps:
+        write_completed_run_marker(
+            run_dir=run.run_dir,
+            report_path=report_path,
+            training_config_path=root / args.config,
+            final_global_step=result.trainer_state.global_step,
+        )
     summary = {
         "checkpoint_events": [asdict(event) for event in result.checkpoint_events],
         "data_state": asdict(result.data_state),

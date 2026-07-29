@@ -8,9 +8,85 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as functional
 from torch import nn
+from torch.nn.attention.flex_attention import (
+    BlockMask,
+    create_block_mask,
+    flex_attention,
+)
 
 from atomllm.model.config import ModelConfig
 from atomllm.model.rotary import RotaryEmbedding
+
+
+def _create_segment_block_mask(segment_ids: torch.Tensor) -> BlockMask:
+    batch_size, sequence_length = segment_ids.shape
+
+    def mask_mod(
+        batch: torch.Tensor,
+        _head: torch.Tensor,
+        query_index: torch.Tensor,
+        key_index: torch.Tensor,
+    ) -> torch.Tensor:
+        query_segment = segment_ids[batch, query_index]
+        return (
+            (query_index >= key_index)
+            & (query_segment > 0)
+            & (query_segment == segment_ids[batch, key_index])
+        )
+
+    return create_block_mask(
+        mask_mod,
+        batch_size,
+        None,
+        sequence_length,
+        sequence_length,
+        device=segment_ids.device,
+    )
+
+
+_compiled_create_segment_block_mask = torch.compile(
+    _create_segment_block_mask,
+    fullgraph=True,
+    dynamic=False,
+)
+_compiled_flex_attention = torch.compile(
+    flex_attention,
+    fullgraph=True,
+    dynamic=False,
+)
+
+
+def build_segment_attention_mask(
+    segment_ids: torch.Tensor,
+    *,
+    use_flex: bool = True,
+) -> BlockMask | torch.Tensor:
+    """Build causal attention that cannot cross packed-conversation boundaries."""
+    if segment_ids.ndim != 2:
+        raise ValueError("segment_ids must have shape [batch, sequence]")
+    if segment_ids.dtype not in {
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+        torch.uint8,
+    }:
+        raise TypeError("segment_ids must use an integer dtype")
+    if torch.any(segment_ids < 0).item():
+        raise ValueError("segment_ids must be non-negative")
+    if segment_ids.device.type == "cuda" and use_flex:
+        return _compiled_create_segment_block_mask(segment_ids)
+
+    query_segments = segment_ids[:, None, :, None]
+    key_segments = segment_ids[:, None, None, :]
+    sequence_length = segment_ids.shape[1]
+    causal = torch.ones(
+        sequence_length,
+        sequence_length,
+        dtype=torch.bool,
+        device=segment_ids.device,
+    ).tril()
+    return causal[None, None] & (query_segments > 0) & (query_segments == key_segments)
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,6 +279,7 @@ class GroupedQueryAttention(nn.Module):
         hidden_states: torch.Tensor,
         *,
         attention_mask: torch.Tensor | None = None,
+        segment_attention_mask: BlockMask | torch.Tensor | None = None,
         past_key_value: KVCache | None = None,
         use_cache: bool = False,
     ) -> tuple[torch.Tensor, KVCache | None]:
@@ -238,6 +315,38 @@ class GroupedQueryAttention(nn.Module):
             key = torch.cat((past_key_value.key, key), dim=-2)
             value = torch.cat((past_key_value.value, value), dim=-2)
         next_cache = KVCache(key=key, value=value) if use_cache else None
+        if segment_attention_mask is not None:
+            if attention_mask is not None:
+                raise ValueError(
+                    "segment_attention_mask and attention_mask are mutually exclusive"
+                )
+            if past_key_value is not None or use_cache:
+                raise ValueError("segment attention is only supported without KV cache")
+            if self.training and self.attention_dropout:
+                raise ValueError("segment attention requires zero attention dropout")
+            if isinstance(segment_attention_mask, BlockMask):
+                attention_output = _compiled_flex_attention(
+                    query,
+                    key,
+                    value,
+                    block_mask=segment_attention_mask,
+                    enable_gqa=True,
+                )
+            else:
+                attention_output = functional.scaled_dot_product_attention(
+                    query,
+                    key,
+                    value,
+                    attn_mask=segment_attention_mask,
+                    dropout_p=0.0,
+                    enable_gqa=True,
+                )
+            attention_output = (
+                attention_output.transpose(1, 2)
+                .contiguous()
+                .view(hidden_states.shape[0], query_length, self.hidden_size)
+            )
+            return self.o_proj(attention_output), next_cache
         # The common pre-training path has no padding and no KV cache. Let
         # SDPA express causality directly so CUDA can select a fused kernel and
         # avoid materializing a [T, T] boolean mask for every block.

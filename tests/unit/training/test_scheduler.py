@@ -47,6 +47,25 @@ def test_constant_schedule_only_changes_during_warmup() -> None:
         scheduler.prepare_step()
 
 
+def test_trapezoidal_schedule_holds_peak_then_cools_down() -> None:
+    config = load_training_config(CONFIG_PATH)
+    scheduler_config = replace(
+        config.scheduler,
+        name="trapezoidal",
+        warmup_steps=2,
+        total_steps=6,
+        minimum_learning_rate_ratio=0.1,
+        cooldown_steps=3,
+    )
+    parameter = torch.nn.Parameter(torch.ones(()))
+    optimizer = torch.optim.SGD([parameter], lr=0.01)
+    scheduler = LearningRateScheduler(optimizer, scheduler_config)
+
+    assert [scheduler.multiplier(index) for index in range(6)] == pytest.approx(
+        [0.5, 1.0, 1.0, 1.0, 0.55, 0.1]
+    )
+
+
 def test_scheduler_state_roundtrip_and_config_mismatch() -> None:
     scheduler = make_scheduler("cosine")
     scheduler.prepare_step()

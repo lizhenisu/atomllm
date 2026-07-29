@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
-import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -15,6 +15,7 @@ from itertools import islice
 from pathlib import Path
 from typing import Any
 
+import opencc as opencc_package
 from dotenv import load_dotenv
 from opencc import OpenCC
 
@@ -28,10 +29,33 @@ from atomllm.data.schema import (
 )
 
 
-_EMAIL_PATTERN = re.compile(r"(?<![\w.+-])[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,}(?![\w.-])")
-_PHONE_PATTERN = re.compile(r"(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)")
 _TRADITIONAL_TO_SIMPLIFIED = OpenCC("t2s")
 _SIMPLIFIED_TO_TRADITIONAL = OpenCC("s2t")
+
+
+def chinese_script_classifier_identity() -> dict[str, str]:
+    """Fingerprint the locked classification rules without transforming corpus text."""
+    package_root = Path(opencc_package.__file__).resolve().parent
+    paths = [
+        package_root / "config/s2t.json",
+        package_root / "config/t2s.json",
+        *sorted((package_root / "dictionary").glob("*.txt")),
+    ]
+    digest = hashlib.sha256()
+    for path in paths:
+        if not path.is_file():
+            raise RuntimeError(f"OpenCC classification rule is missing: {path.name}")
+        digest.update(path.relative_to(package_root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return {
+        "backend": "opencc-python-reimplemented",
+        "distribution_version": importlib.metadata.version(
+            "opencc-python-reimplemented"
+        ),
+        "rules_sha256": digest.hexdigest(),
+    }
 
 
 class AcquisitionError(RuntimeError):
@@ -89,16 +113,6 @@ def classify_chinese_script(text: str) -> str:
     return "zh"
 
 
-def detect_privacy_warnings(text: str) -> tuple[str, ...]:
-    """Return warning labels without rejecting or modifying the document."""
-    warnings: list[str] = []
-    if _EMAIL_PATTERN.search(text):
-        warnings.append("email")
-    if _PHONE_PATTERN.search(text):
-        warnings.append("phone_number")
-    return tuple(warnings)
-
-
 def normalize_wikipedia_record(
     record: Mapping[str, Any], source_id: str
 ) -> CanonicalDocument:
@@ -125,7 +139,7 @@ def normalize_wikipedia_record(
             "text": text,
             "language": classify_chinese_script(text),
             "content_type": "encyclopedia",
-            "privacy_warnings": list(detect_privacy_warnings(text)),
+            "privacy_warnings": [],
             "quality_warnings": [],
             "metadata": {"title": title, "url": url},
         }

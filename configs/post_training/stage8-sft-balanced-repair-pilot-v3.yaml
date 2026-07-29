@@ -1,0 +1,16 @@
+schema_version: 1
+dataset_id: atom-stage8-sft-balanced-repair-pilot-v3
+sequence_length: 4096
+components:
+  - name: curated-reasoning
+    path: artifacts/post-training-data/stage8-sft-quality-v5-reasoning-pilot
+    manifest_sha256: 828dea12c6195a6b44cb411a2054073f4e7c9752175fba1e87432c6d6d0f21b3
+    repeat: 1
+  - name: focused-multiply-divide-v9
+    path: artifacts/post-training-data/stage8-sft-arithmetic-muldiv-v9
+    manifest_sha256: fb0c8318fc3b3584676eaa639c7005ffe884ace6c01a8ecfecc103a331d64888
+    repeat: 100
+  - name: basic-capabilities-v3
+    path: artifacts/post-training-data/stage8-sft-basic-capabilities-v3
+    manifest_sha256: 5b4e2fcee6ca38160b82ba9023be8d8d78a07fdc680fb0950d272b294235fd80
+    repeat: 20

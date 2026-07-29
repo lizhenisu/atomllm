@@ -68,12 +68,15 @@ class DistributedContext:
             torch.cuda.set_device(local_rank)
         if dist.is_initialized():
             raise DistributedError("a process group is already initialized")
-        dist.init_process_group(
-            backend=config.backend,
-            rank=rank,
-            world_size=world_size,
-            timeout=timedelta(seconds=timeout_seconds),
-        )
+        process_group_options = {
+            "backend": config.backend,
+            "rank": rank,
+            "world_size": world_size,
+            "timeout": timedelta(seconds=timeout_seconds),
+        }
+        if config.backend == "nccl":
+            process_group_options["device_id"] = torch.device("cuda", local_rank)
+        dist.init_process_group(**process_group_options)
         return cls(
             enabled=True,
             backend=config.backend,

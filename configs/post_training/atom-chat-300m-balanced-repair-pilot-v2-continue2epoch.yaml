@@ -1,0 +1,53 @@
+schema_version: 2
+name: atom-chat-300m-balanced-repair-pilot-v2-continue2epoch
+status: smoke
+seed: 20260718
+model:
+  config_path: configs/model/atom-base-300m-long-v1.yaml
+  expected_parameter_count: 303350784
+data:
+  path: artifacts/post-training-data/stage8-sft-balanced-repair-pilot-v1
+  manifest_sha256: 05972f199d8fff315d23f48a7a2b25bef20a7c3bb8ce0407854d6713d7b997f1
+  sample_ratio: 1
+  max_samples: null
+  drop_last: false
+initialization:
+  base_checkpoint: artifacts/training-runs/atom-chat-300m-balanced-repair-pilot-v2/checkpoints/step-000000230
+  base_manifest_sha256: b4b673b23013be2f1452dfb9e79ca52cc270b0f98905bff3f94776bdadf7fef6
+  base_model_sha256: 5e87352ba32df32c77140499e16a1c5ec5bf8e3e284adbd04e2ada2d03c95e94
+  load_optimizer_state: false
+  base_validation_status: deferred
+budget:
+  lower_assistant_target_tokens: 11266626
+  upper_assistant_target_tokens: 11266626
+batch:
+  expected_world_size: 6
+  micro_batch_size: 2
+  gradient_accumulation_steps: 2
+optimizer:
+  learning_rate: 3.0e-6
+  minimum_learning_rate_ratio: 0.2
+  warmup_ratio: 0.03
+  weight_decay: 0.1
+  max_gradient_norm: 1.0
+checkpoint:
+  save_every_steps: 115
+  keep_last: 4
+  exact_resume: true
+runtime:
+  device: cuda
+  precision: bf16
+  gradient_checkpointing: false
+  checkpoint_segment_layers: 1
+  checkpoint_interval_segments: 1
+  loss_chunk_size: 1024
+  ddp_bucket_cap_mb: 200
+  compile_model: false
+  isolate_packed_conversations: true
+  eot_loss_weight: 0.25
+replay:
+  path: artifacts/training-data/atom-base-300m-cooldown-pilot-v1
+  manifest_sha256: a15edc821512fbf6266cd62a256905f37fb1251a15436eb9689e353f8e39ead6
+  interval_steps: 2
+  loss_weight: 0.5
+  seed: 20260718

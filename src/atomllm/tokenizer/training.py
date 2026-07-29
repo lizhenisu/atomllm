@@ -113,7 +113,7 @@ def verify_training_input(
     config: TokenizerConfig,
     project_root: str | Path,
 ) -> TrainingInput:
-    """Verify file identity, line count, and canonical document validity."""
+    """Verify identity, line count, and canonical records in one file scan."""
     root = Path(project_root).resolve()
     input_path = _resolve_within_root(
         root,
@@ -124,15 +124,23 @@ def verify_training_input(
         raise TokenizerTrainingError(
             f"training data not found: {config.training_data.input_path}"
         )
-    actual_sha256 = _sha256(input_path)
+    digest = hashlib.sha256()
+    document_count = 0
+    validation_error: UnicodeDecodeError | ValueError | None = None
+    with input_path.open("rb") as handle:
+        for line in handle:
+            digest.update(line)
+            if validation_error is None:
+                try:
+                    CanonicalDocument.from_json_line(line.decode("utf-8"))
+                except (UnicodeDecodeError, ValueError) as error:
+                    validation_error = error
+            document_count += 1
+    actual_sha256 = digest.hexdigest()
     if actual_sha256 != config.training_data.expected_sha256:
         raise TokenizerTrainingError("training data SHA-256 does not match config")
-
-    document_count = 0
-    with input_path.open(encoding="utf-8") as handle:
-        for line in handle:
-            CanonicalDocument.from_json_line(line)
-            document_count += 1
+    if validation_error is not None:
+        raise validation_error
     if document_count != config.training_data.document_count:
         raise TokenizerTrainingError(
             "training data document count does not match config"

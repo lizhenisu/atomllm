@@ -78,6 +78,24 @@ def test_transformer_block_parameter_count_matches_contract() -> None:
     assert parameter_count == 9_280
 
 
+def test_zero_residual_dropout_uses_identity_fast_path() -> None:
+    block = TransformerBlock(small_model_config(), layer_index=0)
+
+    assert isinstance(block.residual_dropout, nn.Identity)
+
+
+def test_post_training_residual_dropout_remains_configurable() -> None:
+    config = small_model_config()
+    config = replace(
+        config,
+        components=replace(config.components, residual_dropout=0.1),
+    )
+    block = TransformerBlock(config, layer_index=0)
+
+    assert isinstance(block.residual_dropout, nn.Dropout)
+    assert block.residual_dropout.p == 0.1
+
+
 class _ScaledAttention(nn.Module):
     def forward(
         self,

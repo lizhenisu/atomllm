@@ -4,7 +4,7 @@ status: smoke
 seed: 42
 model:
   config_path: configs/model/atom-base-300m.yaml
-  config_sha256: b9a516a041e1efda937d56c7d3f19a3b8f19e8c588c355171739ef196f084d76
+  config_sha256: 4a9a0d4728afaf32c25057641bfa0c86fe4214cbdf5699117a116c599fd7833e
   name: atom-base-300m-v1
   expected_parameter_count: 303350784
 data:

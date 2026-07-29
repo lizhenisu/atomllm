@@ -1,3 +1,5 @@
+import json
+import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -9,7 +11,13 @@ from atomllm.model.model import AtomLLM
 from atomllm.training.config import TrainingConfig, file_sha256, load_training_config
 from atomllm.training.data import PackedTokenDataset, ResumableBatchIterator
 from atomllm.training.checkpoint import CheckpointIdentity, restore_training_checkpoint
-from atomllm.training.trainer import Trainer, TrainingError, train_with_checkpoints
+from atomllm.training.trainer import (
+    Trainer,
+    TrainingError,
+    configure_cuda_runtime,
+    train_with_checkpoints,
+    write_completed_run_marker,
+)
 
 
 MODEL_CONFIG_PATH = Path("configs/model/atom-base-300m.yaml")
@@ -35,6 +43,68 @@ def tiny_model() -> AtomLLM:
         expected_parameter_count=2_592,
     )
     return AtomLLM(config)
+
+
+def test_configure_cuda_runtime_selects_throughput_backends(monkeypatch) -> None:
+    deterministic_calls = []
+    monkeypatch.setattr(
+        torch,
+        "use_deterministic_algorithms",
+        deterministic_calls.append,
+    )
+    monkeypatch.setattr(torch.backends.cudnn, "deterministic", True)
+    monkeypatch.setattr(torch.backends.cudnn, "benchmark", False)
+    monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
+    monkeypatch.setattr(torch.backends.cudnn, "allow_tf32", False)
+    monkeypatch.setenv("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
+    configure_cuda_runtime(deterministic=False)
+
+    assert deterministic_calls == [False]
+    assert torch.backends.cudnn.deterministic is False
+    assert torch.backends.cudnn.benchmark is True
+    assert torch.backends.cuda.matmul.allow_tf32 is True
+    assert torch.backends.cudnn.allow_tf32 is True
+    assert "CUBLAS_WORKSPACE_CONFIG" not in os.environ
+
+
+def test_completed_run_marker_binds_final_checkpoint_and_report(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    checkpoint = run / "checkpoints/step-000000004"
+    checkpoint.mkdir(parents=True)
+    manifest = checkpoint / "manifest.json"
+    manifest.write_text(
+        json.dumps({"checkpoint_id": checkpoint.name, "global_step": 4}) + "\n",
+        encoding="utf-8",
+    )
+    latest = run / "checkpoints/latest.json"
+    latest.write_text(
+        json.dumps(
+            {
+                "checkpoint_id": checkpoint.name,
+                "manifest_sha256": file_sha256(manifest),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    report = run / "reports/training-report-test.json"
+    report.parent.mkdir()
+    report.write_text("{}\n", encoding="utf-8")
+    config = tmp_path / "training.yaml"
+    config.write_text("name: test\n", encoding="utf-8")
+
+    completion = write_completed_run_marker(
+        run_dir=run,
+        report_path=report,
+        training_config_path=config,
+        final_global_step=4,
+    )
+
+    assert completion["checkpoint_id"] == "step-000000004"
+    assert (run / "COMPLETED").read_text(encoding="utf-8") == (
+        f"{file_sha256(run / 'completion.json')}  completion.json\n"
+    )
 
 
 def tiny_training_config(

@@ -1,0 +1,33 @@
+schema_version: 1
+evaluation_id: atom-chat-300m-candidate-comparison-general-v1
+model_config: configs/model/atom-base-300m-long-v1.yaml
+model_config_sha256: 180b4bb175d1ecc2a231874c3a1897f9712660da02560b9b5d277abf76419f85
+validation_data: artifacts/training-data/formal-validation-token-shards-v2
+validation_manifest_sha256: b88996440f7c529d7544c56e7a8e0473bcb51dcbf61e9ab0009f8b7a0a77a30c
+sequence_length: 4096
+sample_blocks: 512
+sample_seed: 20260716
+micro_batch_size: 2
+loss_chunk_size: 1024
+expected_world_size: 6
+checkpoints:
+  - name: v4-final
+    path: artifacts/training-runs/atom-chat-300m-sft-quality-v4-replay-6x3090-v1/checkpoints/step-000005317
+    manifest_sha256: ca65383384ed7ff2b719e5972e04d70c6a148b62899b42c17fedb2a29b40f026
+    model_sha256: 632c96041a48b77e3340adbcf106300d8ba56a0159af7b349a0bd639cc7c7c92
+  - name: mixed-v1-step318
+    path: artifacts/training-runs/atom-chat-300m-balanced-capabilities-v1-3epoch-lr5e6/checkpoints/step-000000318
+    manifest_sha256: 8af7a93a68737d38db9037348069152878bd887f43bc5090e6a150a4159f01f9
+    model_sha256: ec918d49d877f9625826dedcf7bfa5ba0b63eee07585c46e01706c157b3231c2
+  - name: memory-v2-step99
+    path: artifacts/training-runs/atom-chat-300m-balanced-capabilities-v2-pilot-3epoch-lr3e6/checkpoints/step-000000099
+    manifest_sha256: ca97f1433114cd1f3fa759791e84101c62deb1d8e0ae5b3e41627d20d019054a
+    model_sha256: 07bc53201949c04a22c21dede7bc2c3784eb68db2103766da9ab2b7751a37f08
+  - name: reasoning-v5-step69
+    path: artifacts/training-runs/atom-chat-300m-quality-v5-reasoning-pilot-2epoch-lr5e6/checkpoints/step-000000069
+    manifest_sha256: 336ef5205429fef62f6295cbf19e1ff099442508edb1bd570e311a63d922ce6e
+    model_sha256: 4e2eb6f3a76b77d557b8f56e6b0748bb785d154e2cb8e17b4a3f1f481da9b289
+  - name: balanced-v3-step285
+    path: artifacts/training-runs/atom-chat-300m-balanced-capabilities-v3-5epoch-lr8e6/checkpoints/step-000000285
+    manifest_sha256: 6e3015fbd85b39ee125b5392d3f843eb1d746ed2d7d1d9907777db0949177ffd
+    model_sha256: c78a64e2caa7e8c8770b378e2ea2228815cf51ab53e910246f57cb2c71c4365b

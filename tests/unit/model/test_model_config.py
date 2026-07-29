@@ -25,7 +25,7 @@ def test_loads_committed_model_config_with_exact_parameter_count() -> None:
     breakdown = calculate_parameter_count(config)
 
     assert config.tokenizer.vocab_size == 32_000
-    assert config.dimensions.max_sequence_length == 8_192
+    assert config.dimensions.max_sequence_length == 40_960
     assert config.dimensions.num_layers == 24
     assert config.dimensions.hidden_size == 1_024
     assert config.dimensions.num_attention_heads == 16
@@ -119,14 +119,26 @@ def test_rejects_rope_scaling_in_model_v1(tmp_path: Path) -> None:
         load_model_config(path)
 
 
-def test_rejects_nonzero_dropout(tmp_path: Path) -> None:
+def test_accepts_nonzero_dropout_for_post_training(tmp_path: Path) -> None:
     path = write_modified_config(
         tmp_path,
         "attention_dropout: 0.0",
         "attention_dropout: 0.1",
     )
 
-    with pytest.raises(ModelConfigError, match="must be 0.0"):
+    config = load_model_config(path)
+
+    assert config.components.attention_dropout == 0.1
+
+
+def test_rejects_dropout_outside_probability_range(tmp_path: Path) -> None:
+    path = write_modified_config(
+        tmp_path,
+        "residual_dropout: 0.0",
+        "residual_dropout: 1.0",
+    )
+
+    with pytest.raises(ModelConfigError, match=r"must be in \[0, 1\)"):
         load_model_config(path)
 
 

@@ -15,7 +15,7 @@ class SchedulerError(ValueError):
 
 
 class LearningRateScheduler:
-    """Apply warmup plus cosine or constant learning rates before each step."""
+    """Apply warmup plus constant, cosine, or late-cooldown learning rates."""
 
     def __init__(
         self,
@@ -40,6 +40,14 @@ class LearningRateScheduler:
             return (step_index + 1) / self.config.warmup_steps
         if self.config.name == "constant":
             return 1.0
+        if self.config.name == "trapezoidal":
+            cooldown_start = self.config.total_steps - self.config.cooldown_steps
+            if step_index < cooldown_start:
+                return 1.0
+            cooldown_index = step_index - cooldown_start
+            progress = cooldown_index / max(self.config.cooldown_steps - 1, 1)
+            minimum = self.config.minimum_learning_rate_ratio
+            return 1.0 - (1.0 - minimum) * progress
         decay_steps = self.config.total_steps - self.config.warmup_steps
         decay_index = step_index - self.config.warmup_steps
         progress = decay_index / max(decay_steps - 1, 1)
@@ -65,7 +73,7 @@ class LearningRateScheduler:
         self.completed_steps += 1
 
     def state_dict(self) -> dict[str, Any]:
-        return {
+        state = {
             "format_version": 1,
             "name": self.config.name,
             "warmup_steps": self.config.warmup_steps,
@@ -74,6 +82,9 @@ class LearningRateScheduler:
             "base_learning_rates": list(self.base_learning_rates),
             "completed_steps": self.completed_steps,
         }
+        if self.config.name == "trapezoidal":
+            state["cooldown_steps"] = self.config.cooldown_steps
+        return state
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
         if not isinstance(state, dict):
@@ -86,6 +97,8 @@ class LearningRateScheduler:
             "minimum_learning_rate_ratio": (self.config.minimum_learning_rate_ratio),
             "base_learning_rates": list(self.base_learning_rates),
         }
+        if self.config.name == "trapezoidal":
+            expected["cooldown_steps"] = self.config.cooldown_steps
         for key, expected_value in expected.items():
             if state.get(key) != expected_value:
                 raise SchedulerError(f"scheduler state mismatch: {key}")

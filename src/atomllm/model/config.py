@@ -229,10 +229,6 @@ class ModelComponents:
         ):
             if not 0.0 <= dropout < 1.0:
                 raise ModelConfigError(f"components.{field_name} must be in [0, 1)")
-            if dropout != 0.0:
-                raise ModelConfigError(
-                    f"components.{field_name} must be 0.0 for model v1"
-                )
         return cls(
             normalization=data["normalization"],
             rms_norm_epsilon=_finite_float(

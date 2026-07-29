@@ -1,0 +1,40 @@
+schema_version: 1
+dataset_id: atom-stage8-sft-arithmetic-focus-v2
+raw_root: artifacts/post-training-data/raw/stage8-polish
+tokenizer: artifacts/tokenizers/atom-tokenizer-formal-v4/tokenizer.json
+sequence_length: 4096
+selection_seed: 20260716
+sources:
+  smoltalk:
+    repository: HuggingFaceTB/smol-smoltalk
+    revision: f73fe857d519ff6ac5af2ea67c4d3834da7b8bcc
+    license: Apache-2.0
+    directory: HuggingFaceTB--smol-smoltalk
+    selection_basis_points: 1
+    files:
+      data/train-00000-of-00004.parquet: 498cd4580014f42c40cfde066573564ed28e3e1548a5566715b615f5ea932856
+      data/train-00001-of-00004.parquet: 5412c03df579fc7dd7d06c7f5249627d99d0621882fb8f2cd5c13582eb2a80f6
+      data/train-00002-of-00004.parquet: aefcac6571abf275b4e1629baa01f326c0fe279d35cd0349b7439319923815a7
+      data/train-00003-of-00004.parquet: c15edfca888c9924a626dad7b7f4e9f08d8f406f997ac13be46bc9be0a6192db
+      data/test-00000-of-00001.parquet: be6773dcce145f3918ff14237b1f765affa427b0b13f6a02d397e665ac908b9a
+  metamath:
+    repository: meta-math/MetaMathQA-40K
+    revision: bcd31225a65ef3b9fe372089cd0b69dde52168c5
+    license: MIT
+    directory: meta-math--MetaMathQA-40K
+    selection_basis_points: 1
+    files:
+      MetaMathQA-40K.json: c884f10e8aa1229a6e73a6bba2c9134ee0c7b7de92a02a7b8c9459085a59e117
+  gsm8k_zh:
+    repository: meta-math/GSM8K_zh
+    revision: 4a5009abc37cbb2d3fd1a745f80e5ea1405ba9aa
+    license: MIT
+    directory: meta-math--GSM8K_zh
+    selection_basis_points: 1
+    validation_basis_points: 1500
+    files:
+      GSM8K_zh.json: b145a64d64c5a8a593232ed62d709dab637a827215f0febc17b448bbbfe890e1
+  synthetic_arithmetic:
+    generator: exhaustive-basic-arithmetic-v2
+    license: generated-locally
+    variants: 32

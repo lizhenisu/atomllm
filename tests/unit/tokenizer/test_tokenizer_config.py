@@ -47,11 +47,17 @@ def test_loads_committed_smoke_config() -> None:
     )
 
 
-def test_rejects_non_32k_vocabulary(tmp_path: Path) -> None:
+def test_rejects_unapproved_vocabulary(tmp_path: Path) -> None:
     path = write_modified_config(tmp_path, "vocab_size: 32000", "vocab_size: 16000")
 
-    with pytest.raises(TokenizerConfigError, match="vocab_size must be 32000"):
+    with pytest.raises(TokenizerConfigError, match="vocab_size must be one of"):
         load_tokenizer_config(path)
+
+
+def test_accepts_48k_candidate_vocabulary(tmp_path: Path) -> None:
+    path = write_modified_config(tmp_path, "vocab_size: 32000", "vocab_size: 48000")
+
+    assert load_tokenizer_config(path).algorithm.vocab_size == 48000
 
 
 def test_rejects_changed_special_token_id(tmp_path: Path) -> None:

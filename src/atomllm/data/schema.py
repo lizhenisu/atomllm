@@ -23,7 +23,7 @@ VALID_PROVIDERS = frozenset({"http", "huggingface", "local", "synthetic"})
 
 _SOURCE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _DOCUMENT_ID_PATTERN = re.compile(r"^doc-[0-9a-f]{64}$")
-_LANGUAGE_PATTERN = re.compile(r"^(?:[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*|und)$")
+_LANGUAGE_PATTERN = re.compile(r"^(?:code|[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*|und)$")
 _WARNING_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _FLOATING_REVISIONS = frozenset({"latest", "main", "master", "head"})

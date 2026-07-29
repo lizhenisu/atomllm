@@ -3,8 +3,16 @@ from pathlib import Path
 
 import pytest
 import torch
+from tokenizers import Tokenizer
+from tokenizers.models import WordLevel
+from tokenizers.pre_tokenizers import Whitespace
 
-from atomllm.inference.generation import greedy_generate
+from atomllm.inference.chat import encode_chat
+from atomllm.inference.generation import (
+    _apply_repetition_controls,
+    greedy_generate,
+    sample_generate,
+)
 from atomllm.model.config import load_model_config
 from atomllm.model.model import AtomLLM
 
@@ -71,3 +79,47 @@ def test_generation_validates_length_and_restores_training_mode() -> None:
         greedy_generate(model, prompt, max_new_tokens=0, use_cache=True)
     with pytest.raises(ValueError, match="exceed"):
         greedy_generate(model, prompt, max_new_tokens=13, use_cache=True)
+
+
+def test_sample_generation_is_seeded_and_validates_sampling_parameters() -> None:
+    model = tiny_model()
+    prompt = torch.tensor([[2, 17, 18, 19]])
+
+    first = sample_generate(model, prompt, max_new_tokens=4, seed=91)
+    second = sample_generate(model, prompt, max_new_tokens=4, seed=91)
+
+    assert torch.equal(first, second)
+    with pytest.raises(ValueError, match="temperature"):
+        sample_generate(model, prompt, max_new_tokens=1, temperature=0)
+    with pytest.raises(ValueError, match="top_p"):
+        sample_generate(model, prompt, max_new_tokens=1, top_p=0)
+    with pytest.raises(ValueError, match="repetition_penalty"):
+        sample_generate(model, prompt, max_new_tokens=1, repetition_penalty=0.9)
+    with pytest.raises(ValueError, match="no_repeat_ngram_size"):
+        sample_generate(model, prompt, max_new_tokens=1, no_repeat_ngram_size=-1)
+
+
+def test_repetition_controls_penalize_tokens_and_ban_repeated_ngrams() -> None:
+    logits = torch.tensor([[0.0, 4.0, -2.0, 3.0, 2.0]])
+    continuation = torch.tensor([[1, 2, 3, 1, 2]])
+
+    controlled = _apply_repetition_controls(
+        logits,
+        continuation,
+        repetition_penalty=2.0,
+        no_repeat_ngram_size=3,
+    )
+
+    assert controlled[0, 1].item() == 2.0
+    assert controlled[0, 2].item() == -4.0
+    assert controlled[0, 3].item() == float("-inf")
+    assert controlled[0, 4].item() == 2.0
+
+
+def test_chat_encoding_matches_frozen_sft_template() -> None:
+    tokenizer = Tokenizer(WordLevel({"<unk>": 1, "hello": 20}, unk_token="<unk>"))
+    tokenizer.pre_tokenizer = Whitespace()
+
+    tokens = encode_chat(tokenizer, [{"role": "user", "content": "hello"}])
+
+    assert tokens == [2, 5, 20, 8, 6]

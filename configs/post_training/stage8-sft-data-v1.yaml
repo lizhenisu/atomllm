@@ -1,0 +1,7 @@
+schema_version: 1
+dataset_id: atom-stage8-sft-v1
+raw_root: artifacts/post-training-data/raw/stage8-sft
+download_manifest: artifacts/post-training-data/download-manifest-v1.json
+tokenizer: artifacts/tokenizers/atom-tokenizer-formal-v4/tokenizer.json
+sequence_length: 4096
+validation_percent: 1

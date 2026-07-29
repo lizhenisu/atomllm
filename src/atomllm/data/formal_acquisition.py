@@ -16,10 +16,7 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
-from atomllm.data.acquisition import (
-    classify_chinese_script,
-    detect_privacy_warnings,
-)
+from atomllm.data.acquisition import classify_chinese_script
 from atomllm.data.formal_plan import FormalDataPlan, load_formal_data_plan
 from atomllm.data.mixture import load_pretraining_mixture
 from atomllm.data.schema import SCHEMA_VERSION, CanonicalDocument, make_document_id
@@ -415,7 +412,7 @@ def _document_from_record(
             "text": text,
             "language": language,
             "content_type": stream.content_type,
-            "privacy_warnings": list(detect_privacy_warnings(text)),
+            "privacy_warnings": [],
             "quality_warnings": [],
             "metadata": {
                 "formal_v0_stream_id": stream.stream_id,

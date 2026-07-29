@@ -12,7 +12,7 @@ tokenizer:
     bos: 2
     eos: 3
 dimensions:
-  max_sequence_length: 8192
+  max_sequence_length: 40960
   num_layers: 24
   hidden_size: 1024
   num_attention_heads: 16

@@ -1,0 +1,51 @@
+schema_version: 2
+name: atom-chat-300m-balanced-capabilities-v1-3epoch-lr5e6
+status: smoke
+seed: 20260716
+model:
+  config_path: configs/model/atom-base-300m-long-v1.yaml
+  expected_parameter_count: 303350784
+data:
+  path: artifacts/post-training-data/stage8-sft-balanced-capabilities-v1
+  manifest_sha256: 22ad1694e89f464d93f4c08ba37c4c57eecdce45781b7c0494eae8aab527b516
+  sample_ratio: 1
+  max_samples: null
+  drop_last: false
+initialization:
+  base_checkpoint: artifacts/training-runs/atom-chat-300m-basic-capabilities-v2-100epoch-lr1e5/checkpoints/step-000000020
+  base_manifest_sha256: b4a94ada20bb3b719c06ece3558d0d913aec1872843af5c07efc9dbb4154bab8
+  base_model_sha256: 7ac1652afa69b1b379595a1675516e97f55ded5ef1d595e35e41366476f09ff2
+  load_optimizer_state: false
+  base_validation_status: passed
+budget:
+  lower_assistant_target_tokens: 4298859
+  upper_assistant_target_tokens: 4298859
+batch:
+  expected_world_size: 6
+  micro_batch_size: 2
+  gradient_accumulation_steps: 2
+optimizer:
+  learning_rate: 5.0e-6
+  minimum_learning_rate_ratio: 0.2
+  warmup_ratio: 0.03
+  weight_decay: 0.1
+  max_gradient_norm: 1.0
+checkpoint:
+  save_every_steps: 106
+  keep_last: 3
+  exact_resume: true
+runtime:
+  device: cuda
+  precision: bf16
+  gradient_checkpointing: false
+  checkpoint_segment_layers: 1
+  checkpoint_interval_segments: 1
+  loss_chunk_size: 1024
+  ddp_bucket_cap_mb: 200
+  compile_model: false
+replay:
+  path: artifacts/training-data/atom-base-300m-cooldown-pilot-v1
+  manifest_sha256: a15edc821512fbf6266cd62a256905f37fb1251a15436eb9689e353f8e39ead6
+  interval_steps: 2
+  loss_weight: 0.5
+  seed: 20260716

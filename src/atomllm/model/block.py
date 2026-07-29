@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 from torch import nn
+from torch.nn.attention.flex_attention import BlockMask
 
 from atomllm.model.attention import GroupedQueryAttention, KVCache
 from atomllm.model.config import ModelConfig
@@ -36,13 +37,21 @@ class TransformerBlock(nn.Module):
             eps=config.components.rms_norm_epsilon,
         )
         self.mlp = SwiGLU(config)
-        self.residual_dropout = nn.Dropout(config.components.residual_dropout)
+        # Pre-training uses zero dropout. Avoid dispatching a no-op dropout
+        # operator twice per layer while retaining configurable dropout for
+        # smaller-data post-training model configs.
+        self.residual_dropout = (
+            nn.Identity()
+            if config.components.residual_dropout == 0.0
+            else nn.Dropout(config.components.residual_dropout)
+        )
 
     def forward(
         self,
         hidden_states: torch.Tensor,
         *,
         attention_mask: torch.Tensor | None = None,
+        segment_attention_mask: BlockMask | torch.Tensor | None = None,
         past_key_value: KVCache | None = None,
         use_cache: bool = False,
     ) -> tuple[torch.Tensor, KVCache | None]:
@@ -55,6 +64,7 @@ class TransformerBlock(nn.Module):
         attention_output, next_cache = self.attention(
             self.attention_norm(hidden_states),
             attention_mask=attention_mask,
+            segment_attention_mask=segment_attention_mask,
             past_key_value=past_key_value,
             use_cache=use_cache,
         )

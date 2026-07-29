@@ -7,8 +7,8 @@ from atomllm.data.acquisition import (
     AcquisitionError,
     WikipediaAcquisitionRequest,
     acquire_wikipedia_records,
+    chinese_script_classifier_identity,
     classify_chinese_script,
-    detect_privacy_warnings,
 )
 from atomllm.data.schema import Acquisition, DataSource
 
@@ -60,10 +60,16 @@ def test_chinese_script_classification() -> None:
     assert classify_chinese_script("中文") == "zh"
 
 
-def test_privacy_detection_warns_without_modifying_text() -> None:
-    text = "合成联系方式 example@example.invalid 和 13800138000。"
+def test_chinese_script_classification_handles_embedded_null() -> None:
+    assert classify_chinese_script("这是\x00简体中文测试。") == "zh-Hans"
 
-    assert detect_privacy_warnings(text) == ("email", "phone_number")
+
+def test_chinese_script_classifier_has_locked_rule_fingerprint() -> None:
+    identity = chinese_script_classifier_identity()
+
+    assert identity["backend"] == "opencc-python-reimplemented"
+    assert identity["distribution_version"] == "0.1.7"
+    assert len(identity["rules_sha256"]) == 64
 
 
 def test_acquisition_writes_manifest_and_canonical_documents(

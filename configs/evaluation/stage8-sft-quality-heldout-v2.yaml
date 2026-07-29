@@ -1,0 +1,25 @@
+schema_version: 2
+dataset_id: atom-stage8-sft-quality-heldout-v2
+raw_root: artifacts/post-training-data/raw/stage8-polish
+tokenizer: artifacts/tokenizers/atom-tokenizer-formal-v4/tokenizer.json
+sequence_length: 4096
+sample_seed: 20260716
+smoltalk_examples: 4096
+gsm8k_zh_split: train
+gsm8k_validation_basis_points: 1500
+final_assistant_only_sources:
+  - smol-magpie-ultra-short
+  - smol-summarize-5k
+sources:
+  smoltalk:
+    repository: HuggingFaceTB/smol-smoltalk
+    revision: f73fe857d519ff6ac5af2ea67c4d3834da7b8bcc
+    directory: HuggingFaceTB--smol-smoltalk
+    files:
+      data/test-00000-of-00001.parquet: be6773dcce145f3918ff14237b1f765affa427b0b13f6a02d397e665ac908b9a
+  gsm8k_zh:
+    repository: meta-math/GSM8K_zh
+    revision: 4a5009abc37cbb2d3fd1a745f80e5ea1405ba9aa
+    directory: meta-math--GSM8K_zh
+    files:
+      GSM8K_zh.json: b145a64d64c5a8a593232ed62d709dab637a827215f0febc17b448bbbfe890e1

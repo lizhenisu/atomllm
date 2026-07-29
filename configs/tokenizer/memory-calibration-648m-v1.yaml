@@ -1,0 +1,47 @@
+schema_version: 1
+name: atom-tokenizer-memory-calibration-v1
+status: smoke
+training_eligible: false
+model_max_length: 8192
+algorithm:
+  model_type: byte_level_bpe
+  vocab_size: 32000
+  normalization: nfc
+  pre_tokenizer: byte_level
+  decoder: byte_level
+  min_frequency: 2
+  dropout: 0.0
+  add_prefix_space: false
+  trim_offsets: false
+  use_regex: true
+  byte_fallback: false
+  fuse_unk: false
+  ignore_merges: false
+  max_token_length: 24
+special_tokens:
+  - {id: 0, token: <pad>, purpose: padding}
+  - {id: 1, token: <unk>, purpose: unknown}
+  - {id: 2, token: <bos>, purpose: beginning_of_sequence}
+  - {id: 3, token: <eos>, purpose: end_of_sequence}
+  - {id: 4, token: <|system|>, purpose: system_role}
+  - {id: 5, token: <|user|>, purpose: user_role}
+  - {id: 6, token: <|assistant|>, purpose: assistant_role}
+  - {id: 7, token: <|tool|>, purpose: tool_role}
+  - {id: 8, token: <|end_of_turn|>, purpose: end_of_turn}
+  - {id: 9, token: <|tool_call|>, purpose: tool_call_start}
+  - {id: 10, token: <|/tool_call|>, purpose: tool_call_end}
+  - {id: 11, token: <|tool_result|>, purpose: tool_result_start}
+  - {id: 12, token: <|/tool_result|>, purpose: tool_result_end}
+  - {id: 13, token: <|think|>, purpose: thinking_start}
+  - {id: 14, token: <|/think|>, purpose: thinking_end}
+training_data:
+  data_version_id: data-formal-70g-tokenizer-snapshot-v1-f31e682760ac
+  split: train
+  document_count: 136562
+  expected_sha256: 4342cb361a52d98bce9730300b84a00667f82115504dce7ab88bca0bee14242b
+  input_path: artifacts/tokenizer-snapshots/formal-70g-v4/documents.jsonl
+evaluation:
+  roundtrip_required: true
+  max_unknown_rate: 0.0
+  suites: [zh-Hans, en, code, math, digits, whitespace]
+output_dir: artifacts/tokenizers/atom-tokenizer-memory-calibration-v1

@@ -1,0 +1,12 @@
+schema_version: 1
+dataset_id: atom-stage8-sft-balanced-capabilities-v1
+sequence_length: 4096
+components:
+  - name: arithmetic-v2
+    path: artifacts/post-training-data/stage8-sft-arithmetic-focus-v2
+    manifest_sha256: 1fcec6df734ad5323bbd0ab38d11107dee1711b4f9436ebc29888227d2174c28
+    repeat: 1
+  - name: basic-capabilities-v2
+    path: artifacts/post-training-data/stage8-sft-basic-capabilities-v2
+    manifest_sha256: cc35f73e7b8ee567ca257d3498f84ae9fe809638d3b7748eab7f2058b08cdcd5
+    repeat: 91

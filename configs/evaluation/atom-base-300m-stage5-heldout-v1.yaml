@@ -1,0 +1,29 @@
+schema_version: 1
+evaluation_id: atom-base-300m-stage5-heldout-v1
+model_config: configs/model/atom-base-300m-long-v1.yaml
+model_config_sha256: 180b4bb175d1ecc2a231874c3a1897f9712660da02560b9b5d277abf76419f85
+validation_data: artifacts/training-data/formal-validation-token-shards-v2
+validation_manifest_sha256: b88996440f7c529d7544c56e7a8e0473bcb51dcbf61e9ab0009f8b7a0a77a30c
+sequence_length: 4096
+sample_blocks: 512
+sample_seed: 20260716
+micro_batch_size: 2
+loss_chunk_size: 1024
+expected_world_size: 6
+checkpoints:
+  - name: stage-a-4k
+    path: artifacts/training-runs/atom-base-300m-stage-a-v1/checkpoints/step-000061876
+    manifest_sha256: 808ab2ca222b57fffa132b5ad0c5880e33031cf94eda9bc22711169f3dd44f2f
+    model_sha256: d3cc934ca1bf02cdaa2ff5dd7804bd35d5ed7f6180584dccc878e5c42094b19a
+  - name: stage-b-20k
+    path: artifacts/training-runs/atom-base-300m-stage-b-v1/checkpoints/step-000001221
+    manifest_sha256: e2b6e8bbf067c4a6ca5a64fb8c779cb2a2d7e019da411efec4bce9664bbfde41
+    model_sha256: f46f8dda7e9ffc6a551fd8f85b80cd4643f9dda8c01e7ffd23557c614a65d003
+  - name: stage-c-40k
+    path: artifacts/training-runs/atom-base-300m-stage-c-v1/checkpoints/step-000001527
+    manifest_sha256: 26ceee0e3802b58bb283f21d30905e5e583de6505a0888753888d1497f49240c
+    model_sha256: 6017a1d5a3e95a13be9c9ad38f5bc51b9528981ea10b555f873779fdfdb662c7
+  - name: sft-v2
+    path: artifacts/training-runs/atom-chat-300m-sft-v2/checkpoints/step-000004295
+    manifest_sha256: 96dc10357aff9a19a8f0c580fa826b9bb7730b771f0a8f8a4115f20c73eb6d36
+    model_sha256: dbd49e3b5c366a2f879d106b27a645293d33b524fa5a942c2d89ef981c78f1b9
