@@ -28,9 +28,7 @@ AtomLLM：从公开语料、Tokenizer
 
 100B 4096 上下文预训练完成后，模型继续真实 20K/40K 连续长文档训练。
 
-## 数据与训练
-
-公开语料覆盖高质量通用文本、百科、科学、数学和代码。
+## 训练
 
 Atom-Base-300M 使用单机 6×RTX 3090 DDP 训练。 4K 主预训练每步处理
 196,608 Token，总计 508,636 个优化器 Step；学习率采用线性 Warmup、恒定
@@ -87,7 +85,13 @@ src/atomllm/
 
 configs/            # 数据、模型与训练配方
 tests/              # 单元测试
+doc/                # 技术文档与评测报告
 ```
+
+## 技术报告
+
+- [Atom Tokenizer 32K 技术评测](doc/tokenizer/evaluations/atom-tokenizer-32k-v1.md)：
+  测试数据、32K/48K 对照、压缩率、正确性、鲁棒性探针。
 
 ## 路线图
 
@@ -98,3 +102,25 @@ tests/              # 单元测试
 - 在首版权重发布后独立推进偏好优化、推理冷启动与 GRPO
 - 探索量化与推理服务
 - 在验证稳定基线后研究 MoE、MLA 和蒸馏
+
+
+## 数据
+
+Atom-Base-300M 的预训练语料全部来自公开数据集，目标规模为 1000 亿
+Token，其中英文 500 亿、简体中文 400 亿、代码 100 亿。数据覆盖高质量
+通用文本、百科、科学论文、数学网页和多语言代码。
+
+| 数据集 | 主要内容 | 目标 Token | 仓库 |
+| --- | --- | ---: | --- |
+| CCI3-HQ | 高质量简体中文通用文本 | 245 亿 | [BAAI/CCI3-HQ](https://huggingface.co/datasets/BAAI/CCI3-HQ) |
+| IndustryCorpus2 | 高质量简体中文行业与通用文本 | 150 亿 | [BAAI/IndustryCorpus2](https://huggingface.co/datasets/BAAI/IndustryCorpus2) |
+| Wikipedia | 中英文百科文本 | 中文 5 亿、英文 40 亿 | [wikimedia/wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia) |
+| FineWeb-Edu | 教育质量筛选的英文网页 | 约 263.66 亿 | [HuggingFaceFW/fineweb-edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) |
+| OpenWebMath | 英文数学网页与公式文本 | 80 亿 | [open-web-math/open-web-math](https://huggingface.co/datasets/open-web-math/open-web-math) |
+| peS2o v3 | 英文科学论文全文 | 80 亿 | [allenai/peS2o](https://huggingface.co/datasets/allenai/peS2o) |
+| DCLM Baseline | 高质量英文通用文本补充 | 约 36.34 亿 | [mlfoundations/dclm-baseline-1.0-parquet](https://huggingface.co/datasets/mlfoundations/dclm-baseline-1.0-parquet) |
+| StarCoderData | Python、JavaScript、Java、C/C++、Rust、Go 等代码 | 100 亿 | [bigcode/starcoderdata](https://huggingface.co/datasets/bigcode/starcoderdata) |
+
+CCI3-HQ、IndustryCorpus2 和 FineWeb-Edu 还应用了各来源提供的高质量评分阈值。代码
+语料覆盖 Python、JavaScript、Java、C++、C、TypeScript、Go、Rust、Shell、
+SQL、HTML 和 CSS。

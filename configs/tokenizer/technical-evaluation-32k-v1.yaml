@@ -1,0 +1,38 @@
+schema_version: 1
+name: atom-tokenizer-32k-technical-evaluation-v1
+candidate_tokenizer: artifacts/tokenizers/atom-tokenizer-en-zh-084pct-h100-v2-32k-v1
+comparison_tokenizer: artifacts/tokenizers/atom-tokenizer-en-zh-084pct-h100-v2-48k-v1
+snapshot_dir: artifacts/tokenizer-snapshots/atom-public-en-zh-084pct-h100-v2
+pretraining_plan: configs/data/public-pretraining-plan-100b-v3.yaml
+output_dir: artifacts/tokenizer-technical-evaluations/atom-tokenizer-32k-v1
+report_path: doc/tokenizer/evaluations/atom-tokenizer-32k-v1.md
+quality_workers: 64
+bootstrap_resamples: 2000
+bootstrap_seed: 20260729
+external_probes:
+  - source_id: supplement-dclm-baseline-en
+    parquet_file: artifacts/source-cache/huggingface/mlfoundations/dclm-baseline-1.0-parquet/817d6752765f6a41261085171dd546b104f60626/filtered/OH_eli5_vs_rw_v2_bigram_200k_train/fasttext_openhermes_reddit_eli5_vs_rw_v2_bigram_200k_train/processed_data/global-shard_01_of_10/local-shard_0_of_10/shard_00000000_processed.parquet
+    text_field: text
+    id_field: id
+    language: en
+    content_type: general
+    sample_size: 1000
+    minimum_characters: 200
+    maximum_characters: 500000
+robustness_suites:
+  whitespace:
+    - "alpha  beta\tgamma\n"
+    - "indent:\n    level1\n        level2\n"
+    - "中文 空格\t制表符\n换行"
+  symbols_and_emoji:
+    - "🙂🚀🌍 | ©™✓∞≠≤≥"
+    - "温度为−12.5°C，误差±0.03%。"
+    - "∫_0^1 x² dx = 1/3; A ∈ ℝ^{m×n}"
+  identifiers:
+    - "https://example.org/api/v1/items?id=123&lang=zh-CN"
+    - "sha256:0123456789abcdef0123456789abcdef"
+    - "snake_case camelCase PascalCase kebab-case"
+  mixed_code:
+    - "def add(a: int, b: int) -> int:\n    return a + b\n"
+    - "const result = items.map((item) => item.id);"
+    - "SELECT id, name FROM users WHERE active = TRUE;"

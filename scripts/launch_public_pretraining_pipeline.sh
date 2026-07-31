@@ -75,15 +75,16 @@ stage_is_complete() {
 ensure_session() {
   local name="$1"
   local command="$2"
-  local quoted
+  local encoded
   if stage_is_complete "$name"; then
     return
   fi
   if tmux has-session -t "$name" 2>/dev/null; then
     return
   fi
-  printf -v quoted '%q' "$command"
-  tmux new-session -d -s "$name" "bash -lc $quoted" 8>&-
+  encoded="$(printf '%s' "$command" | base64 -w 0)"
+  tmux new-session -d -s "$name" \
+    "printf '%s' '$encoded' | base64 --decode | /bin/bash" 8>&-
   echo "started $name"
 }
 
@@ -453,6 +454,7 @@ ensure_session public-pretraining-smoke-30-v2 "
     fi
     resume_args=(--resume)
   fi
+  ulimit -n 65536
   CUDA_VISIBLE_DEVICES=0,1,2,3,4,5 torchrun --standalone --nproc_per_node=6 \
     -m atomllm.training.trainer \
     --config artifacts/training-releases/atom-base-300m-public-100b-v2/training.yaml \
@@ -486,6 +488,7 @@ ensure_session public-pretraining-100b-v2 "
     fi
     resume_args=(--resume)
   fi
+  ulimit -n 65536
   CUDA_VISIBLE_DEVICES=0,1,2,3,4,5 torchrun --standalone --nproc_per_node=6 \
     -m atomllm.training.trainer \
     --config artifacts/training-releases/atom-base-300m-public-100b-v2/training.yaml \

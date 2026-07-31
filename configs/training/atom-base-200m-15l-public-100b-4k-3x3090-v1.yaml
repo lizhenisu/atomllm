@@ -1,0 +1,76 @@
+schema_version: 1
+name: atom-base-200m-15l-public-100b-4k-3x3090-v1
+status: release
+seed: 20260730
+model:
+  config_path: configs/model/atom-base-200m-15l-public-v1.yaml
+  config_sha256: 04a2e0c6393856d2bbdc20e86bbf781ca5b0ae6e6b84a4a032798d885190c562
+  name: atom-base-200m-15l-public-v1
+  expected_parameter_count: 201882624
+data:
+  data_version_id: public-token-shards-100b-6fe6c81a94d9
+  data_manifest_sha256: 0fe514ee8ac96a01c3c16e977355162337755f37aa0caf37b6d7eb39362982fa
+  dataset_manifest_sha256: 0a7ae62f50db70a2ef0370ca2cef4c4dba44029cffba223424e056934753ad47
+  split: train
+  split_sha256: 6fe6c81a94d948f19eef7c7ab0cdcf3204cf2644ce717884f7e977e15e3b6bfe
+  tokenizer_version_id: tokenizer-version-atom-public-32k-bf8fce6ec01f
+  tokenizer_sha256: a95891ad6684bd437cbf1dfd2b3c82d2b24911bd69dd4a3bd20c04022a00c969
+  formal_training_eligible: true
+batch:
+  sequence_length: 4096
+  micro_batch_size: 5
+  gradient_accumulation_steps: 3
+optimizer:
+  name: adamw
+  learning_rate: 0.0002
+  beta1: 0.9
+  beta2: 0.95
+  epsilon: 1.0e-08
+  weight_decay: 0.1
+scheduler:
+  name: trapezoidal
+  warmup_steps: 2000
+  total_steps: 542545
+  minimum_learning_rate_ratio: 0.1
+  cooldown_steps: 54254
+stability:
+  max_gradient_norm: 2.0
+  reject_non_finite_loss: true
+  reject_non_finite_gradient_norm: true
+checkpoint:
+  save_every_steps: 2500
+  keep_last: 4
+  exact_resume: true
+  model_format: safetensors
+  save_optimizer: true
+  save_scheduler: true
+  save_rng_state: true
+  save_data_state: true
+runtime:
+  device: cuda
+  precision: bf16
+  gradient_checkpointing: false
+  checkpoint_segment_layers: 1
+  checkpoint_interval_segments: 1
+  loss_chunk_size: 768
+  ddp_bucket_cap_mb: 50
+  ddp_static_graph: true
+  compile_model: false
+  deterministic: false
+monitoring:
+  enabled: true
+  tensorboard: true
+  log_every_steps: 10
+  flush_every_steps: 10
+distributed:
+  enabled: true
+  backend: nccl
+budget:
+  stage: A
+  expected_world_size: 3
+  expected_tokens_per_step:
+    - 184320
+  expected_training_samples: 24414525
+  expected_total_tokens: 100001894400
+  available_candidate_samples: 24414546
+  minimum_coverage_ratio: 0.99999
